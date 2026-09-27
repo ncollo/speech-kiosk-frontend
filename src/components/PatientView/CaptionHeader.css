@@ -1,0 +1,61 @@
+.caption-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px 8px;
+  flex-shrink: 0;
+}
+
+.caption-header__indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.caption-header__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #1B4B4F;
+}
+
+/* Pulse dot */
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2E8B8B;
+  display: inline-block;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Facility badge */
+.caption-header__facility {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1.5px solid #1B4B4F;
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.facility-name {
+  padding: 5px 12px;
+  color: #1B4B4F;
+}
+
+.facility-dept {
+  padding: 5px 12px;
+  background: #1B4B4F;
+  color: #FAF8F3;
+}

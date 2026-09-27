@@ -1,0 +1,83 @@
+.symptom-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  min-height: 80px;
+  border: 1.5px solid rgba(27, 75, 79, 0.25);
+  border-radius: 6px;
+  background: #FAF8F3;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  position: relative;
+  text-align: center;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.symptom-card:hover {
+  border-color: #1B4B4F;
+}
+
+.symptom-card:focus-visible {
+  outline: 3px solid #2E8B8B;
+  outline-offset: 2px;
+}
+
+/* Selected state — amber functional highlight */
+.symptom-card--selected {
+  border-color: #C97A2B;
+  background: rgba(201, 122, 43, 0.08);
+}
+
+.symptom-card--selected .card-icon {
+  color: #C97A2B;
+}
+
+.symptom-card--selected .card-label {
+  color: #C97A2B;
+  font-weight: 700;
+}
+
+.card-icon {
+  width: 24px;
+  height: 24px;
+  color: #1B4B4F;
+  flex-shrink: 0;
+}
+
+.card-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.card-label {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #1B4B4F;
+  letter-spacing: 0.01em;
+}
+
+/* ASL video indicator thumbnail */
+.card-asl {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(27, 75, 79, 0.3);
+}
+
+.card-asl svg {
+  width: 14px;
+  height: 14px;
+}
+
+.symptom-card--selected .card-asl {
+  color: rgba(201, 122, 43, 0.5);
+}
