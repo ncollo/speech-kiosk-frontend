@@ -1,0 +1,132 @@
+.lp-footer {
+  background: #113235;
+  color: #FAF8F3;
+  padding: 80px 40px 32px;
+  border-top: 1px solid rgba(250, 248, 243, 0.1);
+}
+
+.lp-footer__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.5fr;
+  gap: 48px;
+  padding-bottom: 60px;
+  border-bottom: 1px solid rgba(250, 248, 243, 0.08);
+}
+
+.lp-footer__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.lp-footer__logo {
+  color: #C97A2B;
+}
+
+.lp-footer__name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.lp-footer__desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(250, 248, 243, 0.7);
+  margin-bottom: 24px;
+  max-width: 360px;
+}
+
+.lp-footer__compliance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lp-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  background: rgba(250, 248, 243, 0.08);
+  border: 1px solid rgba(250, 248, 243, 0.15);
+  border-radius: 4px;
+  color: rgba(250, 248, 243, 0.85);
+}
+
+.lp-footer__col-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #C97A2B;
+  margin: 0 0 20px;
+}
+
+.lp-footer__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lp-footer__list a {
+  color: rgba(250, 248, 243, 0.75);
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.15s ease;
+}
+
+.lp-footer__list a:hover {
+  color: #FAF8F3;
+}
+
+.lp-footer__spec {
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(250, 248, 243, 0.7);
+  margin: 0 0 10px;
+}
+
+.lp-footer__spec strong {
+  color: rgba(250, 248, 243, 0.95);
+}
+
+.lp-footer__launch-btn {
+  margin-top: 16px;
+  display: inline-flex;
+}
+
+.lp-footer__bottom {
+  max-width: 1200px;
+  margin: 32px auto 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: rgba(250, 248, 243, 0.5);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.lp-footer__bottom p {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .lp-footer__inner {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .lp-footer__inner {
+    grid-template-columns: 1fr;
+  }
+}

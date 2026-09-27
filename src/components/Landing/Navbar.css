@@ -1,0 +1,80 @@
+.lp-navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(27, 75, 79, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(250, 248, 243, 0.08);
+}
+
+.lp-navbar__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 40px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lp-navbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: #FAF8F3;
+}
+
+.lp-navbar__logo {
+  width: 28px;
+  height: 28px;
+  color: #C97A2B;
+}
+
+.lp-navbar__logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lp-navbar__name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #FAF8F3;
+}
+
+.lp-navbar__links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.lp-navbar__link {
+  font-size: 14px;
+  font-weight: 400;
+  color: rgba(250, 248, 243, 0.7);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.lp-navbar__link:hover {
+  color: #FAF8F3;
+}
+
+.lp-navbar__cta {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1B4B4F;
+  background: #C97A2B;
+  padding: 10px 24px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.lp-navbar__cta:hover {
+  opacity: 0.9;
+}

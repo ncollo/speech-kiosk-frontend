@@ -1,0 +1,75 @@
+.lp-how {
+  background: #1B4B4F;
+  padding: 100px 40px;
+}
+
+.lp-how__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.lp-how__header {
+  text-align: center;
+  margin-bottom: 64px;
+}
+
+.lp-section-title--light {
+  color: #FAF8F3;
+}
+
+.lp-section-subtitle--light {
+  color: rgba(250, 248, 243, 0.6);
+}
+
+.lp-how__steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+}
+
+.lp-step {
+  text-align: center;
+  padding: 32px 20px;
+  border: 1.5px solid rgba(250, 248, 243, 0.1);
+  border-radius: 12px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.lp-step:hover {
+  border-color: rgba(201, 122, 43, 0.4);
+  transform: translateY(-4px);
+}
+
+.lp-step__icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  color: #C97A2B;
+}
+
+.lp-step__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.lp-step__number {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #C97A2B;
+  margin-bottom: 8px;
+}
+
+.lp-step__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #FAF8F3;
+  margin-bottom: 12px;
+}
+
+.lp-step__desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(250, 248, 243, 0.6);
+}
