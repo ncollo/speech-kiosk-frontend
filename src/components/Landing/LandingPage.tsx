@@ -1,7 +1,9 @@
 import Navbar from './Navbar';
 import HeroSection from './HeroSection';
+import IntakeFlowSection from './IntakeFlowSection';
 import FeaturesSection from './FeaturesSection';
 import SystemPreviewSection from './SystemPreviewSection';
+import PhotoGallerySection from './PhotoGallerySection';
 import HowItWorks from './HowItWorks';
 import AccessibilitySection from './AccessibilitySection';
 import ImpactSection from './ImpactSection';
@@ -14,8 +16,10 @@ export default function LandingPage() {
       <Navbar />
       <main id="main-content">
         <HeroSection />
+        <IntakeFlowSection />
         <FeaturesSection />
         <SystemPreviewSection />
+        <PhotoGallerySection />
         <HowItWorks />
         <AccessibilitySection />
         <ImpactSection />

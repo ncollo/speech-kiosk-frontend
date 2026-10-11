@@ -24,29 +24,31 @@ export default function Footer() {
           <div className="lp-footer__compliance">
             <span className="lp-badge">WCAG 2.2 AAA</span>
             <span className="lp-badge">ADA Title III</span>
-            <span className="lp-badge">HIPAA Compliant</span>
+            <span className="lp-badge">Kenya Data Protection Act</span>
+            <span className="lp-badge">Zero PII Storage</span>
           </div>
         </div>
 
         <div className="lp-footer__links-col">
-          <h4 className="lp-footer__col-title">Navigation</h4>
+          <h4 className="lp-footer__col-title">Overview</h4>
           <ul className="lp-footer__list">
             <li><a href="#hero">Overview</a></li>
+            <li><a href="#architecture-flow">4-Screen Progression</a></li>
+            <li><a href="#clinical-photos">Authentic Field Photos</a></li>
             <li><a href="#features">Core Features</a></li>
-            <li><a href="#preview">Interface Showcase</a></li>
-            <li><a href="#how-it-works">How It Works</a></li>
             <li><a href="#accessibility">Accessibility Standards</a></li>
             <li><a href="#impact">Clinical Impact</a></li>
           </ul>
         </div>
 
         <div className="lp-footer__links-col">
-          <h4 className="lp-footer__col-title">Kiosk Interfaces</h4>
+          <h4 className="lp-footer__col-title">Clinical Progression</h4>
           <ul className="lp-footer__list">
-            <li><Link to="/kiosk">Launch Patient View</Link></li>
-            <li><Link to="/kiosk">Clinician Triage Station</Link></li>
-            <li><a href="#accessibility">ASL Sign Video Index</a></li>
-            <li><a href="#how-it-works">Reception Protocol</a></li>
+            <li><Link to="/welcome">1. Welcome & Consent Screen</Link></li>
+            <li><Link to="/clinician/unlock">2. Clinician PIN Unlock</Link></li>
+            <li><Link to="/kiosk">3. Live Kiosk & Triage</Link></li>
+            <li><Link to="/summary">4. Session Summary Handoff</Link></li>
+            <li><Link to="/admin">5. Hospital Admin Portal</Link></li>
           </ul>
         </div>
 
@@ -54,9 +56,9 @@ export default function Footer() {
           <h4 className="lp-footer__col-title">Specifications</h4>
           <p className="lp-footer__spec"><strong>Screen Spec:</strong> 10" Tablet, 1280×800 Landscape</p>
           <p className="lp-footer__spec"><strong>Typography:</strong> Atkinson Hyperlegible (Braille Institute)</p>
-          <p className="lp-footer__spec"><strong>Speech Pipeline:</strong> Real-time on-device / low-latency</p>
-          <Link to="/kiosk" className="lp-hero__btn lp-hero__btn--primary lp-footer__launch-btn">
-            Launch Kiosk Demo
+          <p className="lp-footer__spec"><strong>Sign Language:</strong> Certified Kenya Sign Language (KSL)</p>
+          <Link to="/welcome" className="lp-hero__btn lp-hero__btn--primary lp-footer__launch-btn">
+            Start Patient Intake →
           </Link>
         </div>
       </div>

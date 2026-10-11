@@ -49,12 +49,12 @@
 .lp-navbar__links {
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: 20px;
 }
 
 .lp-navbar__link {
-  font-size: 14px;
-  font-weight: 400;
+  font-size: 13px;
+  font-weight: 600;
   color: rgba(250, 248, 243, 0.7);
   text-decoration: none;
   transition: color 0.2s ease;
@@ -64,12 +64,29 @@
   color: #FAF8F3;
 }
 
-.lp-navbar__cta {
-  font-size: 14px;
+.lp-navbar__link--sub {
+  color: rgba(250, 248, 243, 0.85);
+  border: 1px solid rgba(250, 248, 243, 0.2);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.lp-navbar__link--sub:hover {
+  background: rgba(250, 248, 243, 0.1);
+  border-color: rgba(250, 248, 243, 0.4);
+}
+
+.lp-navbar__link--admin {
+  color: #C97A2B;
   font-weight: 700;
-  color: #1B4B4F;
+}
+
+.lp-navbar__cta {
+  font-size: 13px;
+  font-weight: 700;
+  color: #FAF8F3;
   background: #C97A2B;
-  padding: 10px 24px;
+  padding: 8px 18px;
   border-radius: 6px;
   text-decoration: none;
   transition: opacity 0.2s ease;
@@ -77,4 +94,10 @@
 
 .lp-navbar__cta:hover {
   opacity: 0.9;
+}
+
+@media (max-width: 1024px) {
+  .lp-navbar__link--sub {
+    display: none;
+  }
 }

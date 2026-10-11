@@ -38,6 +38,22 @@
   outline-offset: 2px;
 }
 
+.control-btn--summary {
+  background: rgba(27, 75, 79, 0.06);
+  border-color: #1B4B4F;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.control-btn--summary:hover {
+  background: #1B4B4F;
+}
+
+.control-btn--summary:hover .control-btn__text strong,
+.control-btn--summary:hover .control-btn__text small {
+  color: #FAF8F3;
+}
+
 .control-btn--escalate {
   border-color: rgba(201, 122, 43, 0.4);
 }

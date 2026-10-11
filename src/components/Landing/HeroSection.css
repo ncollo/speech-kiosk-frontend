@@ -21,9 +21,9 @@
   inset: 0;
   background: linear-gradient(
     135deg,
-    rgba(27, 75, 79, 0.92) 0%,
-    rgba(27, 75, 79, 0.75) 50%,
-    rgba(27, 75, 79, 0.55) 100%
+    rgba(27, 75, 79, 0.94) 0%,
+    rgba(27, 75, 79, 0.82) 50%,
+    rgba(27, 75, 79, 0.65) 100%
   );
   z-index: 1;
 }
@@ -31,7 +31,7 @@
 .lp-hero__content {
   position: relative;
   z-index: 2;
-  max-width: 720px;
+  max-width: 760px;
   padding: 120px 40px 80px;
   margin-left: max(40px, calc((100% - 1200px) / 2 + 40px));
 }
@@ -44,13 +44,14 @@
   text-transform: uppercase;
   color: #C97A2B;
   border: 1.5px solid rgba(201, 122, 43, 0.4);
+  background: rgba(201, 122, 43, 0.1);
   border-radius: 4px;
   padding: 6px 14px;
   margin-bottom: 28px;
 }
 
 .lp-hero__title {
-  font-size: 56px;
+  font-size: 54px;
   font-weight: 700;
   line-height: 1.15;
   color: #FAF8F3;
@@ -67,9 +68,9 @@
   font-size: 19px;
   font-weight: 400;
   line-height: 1.65;
-  color: rgba(250, 248, 243, 0.8);
+  color: rgba(250, 248, 243, 0.85);
   margin-bottom: 40px;
-  max-width: 560px;
+  max-width: 600px;
 }
 
 .lp-hero__actions {
@@ -85,10 +86,10 @@
   gap: 8px;
   font-size: 15px;
   font-weight: 700;
-  padding: 14px 28px;
+  padding: 14px 24px;
   border-radius: 6px;
   text-decoration: none;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
   cursor: pointer;
 }
 
@@ -102,11 +103,23 @@
 }
 
 .lp-hero__btn--secondary {
-  background: transparent;
+  background: rgba(250, 248, 243, 0.12);
   color: #FAF8F3;
   border: 1.5px solid rgba(250, 248, 243, 0.35);
 }
 
 .lp-hero__btn--secondary:hover {
+  background: rgba(250, 248, 243, 0.22);
   border-color: rgba(250, 248, 243, 0.65);
+}
+
+.lp-hero__btn--outline {
+  background: transparent;
+  color: #FAF8F3;
+  border: 1.5px solid rgba(250, 248, 243, 0.25);
+  font-size: 14px;
+}
+
+.lp-hero__btn--outline:hover {
+  border-color: rgba(250, 248, 243, 0.6);
 }

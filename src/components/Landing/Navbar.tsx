@@ -18,10 +18,13 @@ export default function Navbar() {
         </Link>
 
         <nav className="lp-navbar__links" aria-label="Main navigation">
-          <a href="#features" className="lp-navbar__link">Features</a>
-          <a href="#how-it-works" className="lp-navbar__link">How It Works</a>
+          <a href="#architecture-flow" className="lp-navbar__link">4-Screen Flow</a>
+          <a href="#clinical-photos" className="lp-navbar__link">Real Photos</a>
+          <a href="#features" className="lp-navbar__link">Capabilities</a>
           <a href="#accessibility" className="lp-navbar__link">Accessibility</a>
-          <a href="#impact" className="lp-navbar__link">Impact</a>
+          <Link to="/welcome" className="lp-navbar__link lp-navbar__link--sub">Welcome Screen</Link>
+          <Link to="/summary" className="lp-navbar__link lp-navbar__link--sub">Summary</Link>
+          <Link to="/admin" className="lp-navbar__link lp-navbar__link--admin">Admin Portal</Link>
           <Link to="/kiosk" className="lp-navbar__cta">Launch Kiosk</Link>
         </nav>
       </div>

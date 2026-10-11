@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { TranscriptEntry } from '../../types';
 import { MicrophoneIcon, TrashIcon, AlertIcon } from '../icons/UIIcons';
 import './ControlsPanel.css';
@@ -12,6 +13,14 @@ export default function ControlsPanel({ entries }: ControlsPanelProps) {
   return (
     <aside className="controls-col" aria-label="Session controls">
       <h2 className="controls-heading">Controls</h2>
+
+      <Link to="/summary" className="control-btn control-btn--summary" id="btn-summary">
+        <span className="control-btn__icon" aria-hidden="true">📋</span>
+        <span className="control-btn__text">
+          <strong>View Session Summary</strong>
+          <small>Handoff & Triage Record</small>
+        </span>
+      </Link>
 
       <button className="control-btn" id="btn-mute">
         <span className="control-btn__icon" aria-hidden="true">
