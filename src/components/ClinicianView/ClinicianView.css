@@ -1,7 +1,0 @@
-.clinician-layout {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
