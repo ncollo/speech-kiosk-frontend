@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Manrope:wght@600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap');
 @import 'tailwindcss';
 
 @theme {
@@ -19,6 +19,9 @@
   --color-line: #dbe5ea;
   --color-slate: #4a5d70;
   --color-alert: #d64545;
+  --color-accent: #2aa6bb;
+  --color-ash: #f3f5f6;
+  --font-ui: 'Inter', system-ui, sans-serif;
   --font-display: 'Manrope', system-ui, sans-serif;
   --font-sans: 'Atkinson Hyperlegible', system-ui, sans-serif;
 }
