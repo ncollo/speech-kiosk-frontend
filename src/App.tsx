@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowRight, ArrowUpRight, ArrowUp, ArrowDown, Play, Star, Phone, EnvelopeSimple, HandWaving, Heartbeat, Plus, Minus,
+  ArrowRight, ArrowUpRight, ArrowUp, ArrowDown, Star, Phone, EnvelopeSimple, HandWaving, Heartbeat, Plus, Minus,
+  List, X, Lock,
 } from '@phosphor-icons/react'
 import Kiosk from './Kiosk'
 
@@ -70,53 +71,115 @@ const FAQS = [
 export default function App() {
   const [qi, setQi] = useState(0)
   const [faq, setFaq] = useState(0)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const q = QUOTES[qi]
   return (
-    <div className="bg-canvas text-navy font-ui antialiased">
+    <div className="bg-canvas text-navy font-ui antialiased scroll-smooth">
       {/* HERO */}
-      <header className="p-3 md:p-4">
+      <header id="home" className="p-3 md:p-4">
         <div className="relative h-[min(92vh,820px)] min-h-[640px] rounded-[28px] overflow-hidden">
           <img src={IMG.hero} alt="A clinician leaning in to listen to a patient" className="absolute inset-0 w-full h-full object-cover object-[70%_30%]" />
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgb(6_24_43/0.82)_0%,rgb(6_24_43/0.45)_45%,rgb(6_24_43/0.15)_100%)]" />
           <div className="absolute inset-x-0 bottom-0 h-40 bg-[linear-gradient(0deg,rgb(6_24_43/0.6),transparent)]" />
 
           {/* nav */}
-          <nav className="relative z-10 flex items-center justify-between px-6 md:px-8 pt-6 text-canvas">
-            <a href="#" className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.02em]">
+          <nav className="relative z-20 flex items-center justify-between px-6 md:px-8 pt-6 text-canvas">
+            <a href="#home" className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.02em]">
               <span className="w-8 h-8 rounded-[9px] bg-canvas text-navy grid place-items-center">
                 <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" aria-hidden><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z" fill="currentColor" /></svg>
               </span>ClearCaption
             </a>
             <div className="hidden md:flex items-center gap-1.5 p-1.5 rounded-full bg-canvas/10 backdrop-blur-md border border-canvas/15 text-[14px]">
-              {[['Home', '#'], ['Problem', '#problem'], ['How it works', '#how'], ['Stories', '#stories'], ['Contact', '#contact']].map(([l, h], i) => (
-                <a key={l} href={h} className={`h-9 px-4 rounded-full grid place-items-center ${i === 0 ? 'bg-canvas text-navy font-medium' : 'hover:bg-canvas/15'}`}>{l}</a>
+              {[
+                ['Home', '#home'],
+                ['Problem', '#problem'],
+                ['How it works', '#how-it-works'],
+                ['Stories', '#stories'],
+                ['Contact', '#contact']
+              ].map(([l, h]) => (
+                <a key={l} href={h} className="h-9 px-4 rounded-full grid place-items-center hover:bg-canvas/20 transition-colors">{l}</a>
               ))}
             </div>
-            <a href="#contact" className="h-10 px-5 rounded-full bg-canvas text-navy text-[14px] font-medium grid place-items-center">Request a visit</a>
+            <div className="hidden sm:flex items-center gap-3">
+              <a href="#/staff" className="h-10 px-4 rounded-full bg-canvas/15 hover:bg-canvas/25 text-canvas text-[13px] font-medium inline-flex items-center gap-1.5 backdrop-blur-md border border-canvas/20 transition-colors">
+                <Lock size={14} /> Staff Login
+              </a>
+              <a href="#/kiosk" className="h-10 px-5 rounded-full bg-accent hover:bg-brand text-canvas text-[14px] font-medium grid place-items-center transition-colors shadow-sm">
+                Launch Kiosk
+              </a>
+            </div>
+
+            {/* Mobile menu toggle */}
+            <div className="flex sm:hidden items-center gap-2">
+              <a href="#/kiosk" className="h-9 px-3.5 rounded-full bg-accent text-canvas text-[13px] font-medium grid place-items-center">
+                Kiosk
+              </a>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label="Toggle Navigation Menu"
+                className="w-9 h-9 rounded-full bg-canvas/20 grid place-items-center text-canvas"
+              >
+                {mobileMenuOpen ? <X size={20} /> : <List size={20} />}
+              </button>
+            </div>
           </nav>
 
+          {/* Mobile dropdown drawer */}
+          {mobileMenuOpen && (
+            <div className="md:hidden absolute top-20 inset-x-4 z-30 p-5 rounded-[22px] bg-navy/95 backdrop-blur-xl border border-canvas/20 text-canvas flex flex-col gap-3 shadow-xl">
+              {[
+                ['Home', '#home'],
+                ['Problem', '#problem'],
+                ['How it works', '#how-it-works'],
+                ['Stories', '#stories'],
+                ['Contact', '#contact']
+              ].map(([l, h]) => (
+                <a
+                  key={l}
+                  href={h}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="py-2.5 px-3 rounded-[12px] hover:bg-canvas/15 text-[16px] font-medium"
+                >
+                  {l}
+                </a>
+              ))}
+              <div className="pt-3 border-t border-canvas/15 flex flex-col gap-2">
+                <a
+                  href="#/kiosk"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full h-11 rounded-full bg-accent text-canvas font-medium flex items-center justify-center gap-2 text-[14px]"
+                >
+                  Launch Patient Kiosk
+                </a>
+                <a
+                  href="#/staff"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full h-11 rounded-full bg-canvas/15 text-canvas font-medium flex items-center justify-center gap-2 text-[14px]"
+                >
+                  <Lock size={15} /> Staff & Clinician Portal
+                </a>
+              </div>
+            </div>
+          )}
+
           {/* headline */}
-          <div className="relative z-10 px-6 md:px-12 pt-[12vh] max-w-[760px] text-canvas flex flex-col gap-6">
-            <h1 className="text-[46px] md:text-[76px] leading-[1] tracking-[-0.045em] font-medium">
+          <div className="relative z-10 px-6 md:px-12 pt-[10vh] md:pt-[12vh] max-w-[760px] text-canvas flex flex-col gap-6">
+            <h1 className="text-[44px] md:text-[76px] leading-[1.02] tracking-[-0.045em] font-medium">
               Every patient<br /><span className="md:pl-24">understood.</span>
             </h1>
-            <p className="text-[16px] leading-6 text-canvas/80 max-w-[420px]">
+            <p className="text-[17px] md:text-[18px] leading-relaxed text-canvas/90 max-w-[500px]">
               A reception-desk tablet that shows a nurse's words as large captions, so Deaf and hard-of-hearing patients can read, tap and answer for themselves.
             </p>
-            <div className="flex flex-wrap gap-3"><PillBtn href="#/kiosk">Try a sample visit</PillBtn></div>
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <PillBtn href="#/kiosk" tone="accent">Launch Patient Kiosk</PillBtn>
+              <a
+                href="#/staff"
+                className="hidden sm:inline-flex items-center gap-2 h-12 px-6 rounded-full bg-canvas/15 hover:bg-canvas/25 text-canvas text-[15px] font-medium backdrop-blur-md border border-canvas/20 transition-colors"
+              >
+                <Lock size={16} /> Staff Login
+              </a>
+            </div>
           </div>
-
-          {/* glass mini card */}
-          <a href="#/kiosk" className="hidden md:flex absolute left-12 bottom-24 z-10 w-[280px] flex-col gap-3 p-2.5 rounded-[18px] bg-canvas/10 backdrop-blur-xl border border-canvas/20 text-canvas">
-            <div className="relative h-[120px] rounded-[12px] overflow-hidden">
-              <img src={IMG.tablet} alt="" className="w-full h-full object-cover" />
-              <span className="absolute inset-0 grid place-items-center"><span className="w-10 h-10 rounded-full bg-canvas/85 text-navy grid place-items-center"><Play size={16} weight="fill" /></span></span>
-            </div>
-            <div className="px-1.5 pb-1 flex items-end justify-between gap-3">
-              <span className="text-[14px] leading-5">See a full front-desk visit, from welcome to summary.</span>
-              <ArrowUpRight size={18} className="shrink-0" />
-            </div>
-          </a>
 
           {/* chips */}
           <div className="hidden lg:flex absolute right-8 bottom-24 z-10 max-w-[420px] flex-wrap justify-end gap-2">
@@ -133,6 +196,7 @@ export default function App() {
           </div>
         </div>
       </header>
+
 
       {/* PROCESS STRIP */}
       <Wrap className="py-8">
@@ -246,7 +310,7 @@ export default function App() {
       </section>
 
       {/* HOW + SCREEN */}
-      <section id="how" className="p-3 md:p-4">
+      <section id="how-it-works" className="p-3 md:p-4">
         <div className="rounded-[28px] bg-navy text-canvas">
           <Wrap className="py-20 md:py-28 flex flex-col gap-14">
             <div className="grid lg:grid-cols-12 gap-6 items-end">
@@ -272,8 +336,8 @@ export default function App() {
             </div>
             <div className="rounded-[24px] bg-canvas/[0.06] border border-canvas/10 p-3 md:p-4"><ScaledKiosk /></div>
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <p className="text-[14px] text-canvas/60">Tap any answer card above, or walk through a full visit.</p>
-              <PillBtn href="#/kiosk">Try the full visit</PillBtn>
+              <p className="text-[14px] text-canvas/60">Tap any answer card above, or walk through a full intake session.</p>
+              <PillBtn href="#/kiosk">Launch Patient Kiosk</PillBtn>
             </div>
           </Wrap>
         </div>
@@ -354,25 +418,37 @@ export default function App() {
         <div className="relative rounded-[28px] bg-ash overflow-hidden">
           <Wrap className="relative z-10 pt-20 pb-8 flex flex-col gap-16">
             <div className="grid lg:grid-cols-12 gap-10 items-end">
-              <h2 className="lg:col-span-7 text-[38px] md:text-[60px] leading-[1] tracking-[-0.045em] font-medium">Every patient understood.<br /><span className="text-navy/35">Bring it to your desk.</span></h2>
-              <form onSubmit={(e) => e.preventDefault()} className="lg:col-span-5 flex flex-col gap-3">
-                <p className="text-[14px] text-slate">Tell us about your hospital and we'll arrange a visit to your reception team.</p>
+              <h2 className="lg:col-span-7 text-[38px] md:text-[60px] leading-[1] tracking-[-0.045em] font-medium">Every patient understood.<br /><span className="text-navy/35">Built for hospital reception.</span></h2>
+              <form onSubmit={(e) => { e.preventDefault(); alert('Inquiry sent to hospital accessibility coordination.') }} className="lg:col-span-5 flex flex-col gap-3">
+                <p className="text-[14px] text-slate">Hospital staff or department inquiry? Reach our on-site technical coordination team.</p>
                 <div className="flex items-center gap-2 h-14 pl-5 pr-1.5 rounded-full bg-canvas border border-line focus-within:border-accent">
                   <EnvelopeSimple size={18} className="text-slate" />
-                  <input type="email" required placeholder="Your work email" aria-label="Work email" className="flex-1 bg-transparent outline-none text-[15px]" />
-                  <button className="h-11 px-5 rounded-full bg-accent text-canvas text-[14px] font-medium">Request a visit</button>
+                  <input type="email" required placeholder="Staff or hospital email" aria-label="Hospital email" className="flex-1 bg-transparent outline-none text-[15px]" />
+                  <button className="h-11 px-5 rounded-full bg-accent hover:bg-brand text-canvas text-[14px] font-medium transition-colors">Send Inquiry</button>
                 </div>
               </form>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8 pt-10 border-t border-line text-[14px]">
-              {[['Product', ['How it works', 'Try a sample visit', 'Who it helps']], ['Support', ['Common questions', 'Accessibility', 'Privacy']], ['Legal', ['Privacy policy', 'Terms of use', 'Data protection']]].map(([h, items]) => (
-                <div key={h as string} className="flex flex-col gap-2.5">
-                  <span className="text-[12px] uppercase tracking-[0.1em] text-slate">{h as string}</span>
-                  {(items as string[]).map((i) => <a key={i} href="#" className="hover:text-accent">{i}</a>)}
-                </div>
-              ))}
               <div className="flex flex-col gap-2.5">
-                <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Talk to us</span>
+                <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Product</span>
+                <a href="#how-it-works" className="hover:text-accent">How it works</a>
+                <a href="#/kiosk" className="hover:text-accent">Launch Patient Kiosk</a>
+                <a href="#problem" className="hover:text-accent">Why front desks need it</a>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Clinical Staff</span>
+                <a href="#/staff" className="text-accent font-semibold hover:underline flex items-center gap-1.5"><Lock size={14} />Staff & Clinician Portal</a>
+                <a href="#/kiosk" className="hover:text-accent">Desk 3 Terminal</a>
+                <a href="#contact" className="hover:text-accent">Accessibility Support</a>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Hospital Compliance</span>
+                <a href="#contact" className="hover:text-accent">Data Protection (DPA)</a>
+                <a href="#contact" className="hover:text-accent">Patient Confidentiality</a>
+                <a href="#contact" className="hover:text-accent">KSL Interpreter Network</a>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Desk Assistance</span>
                 <a href="mailto:hello@clearcaption.co.ke" className="text-[17px] underline underline-offset-4">hello@clearcaption.co.ke</a>
                 <a href="tel:+254700000000" className="flex items-center gap-2"><Phone size={14} />+254 700 000 000</a>
                 <span className="flex items-center gap-2 text-slate"><HandWaving size={14} />Nairobi, Kenya</span>
@@ -380,8 +456,15 @@ export default function App() {
             </div>
           </Wrap>
           <div aria-hidden className="relative -mb-[3vw] select-none text-center text-[17vw] leading-[0.8] tracking-[-0.06em] font-semibold text-navy/[0.06]">ClearCaption</div>
-          <Wrap className="relative z-10 py-5 flex justify-between text-[12px] text-slate border-t border-line">
-            <span>© 2025 ClearCaption</span><span>Privacy · Terms</span>
+          <Wrap className="relative z-10 py-5 flex flex-wrap items-center justify-between gap-4 text-[13px] text-slate border-t border-line">
+            <span>© 2026 ClearCaption · Hospital Front-Desk Speech Captioning</span>
+            <div className="flex items-center gap-6">
+              <a href="#/staff" className="flex items-center gap-1.5 text-accent font-semibold hover:underline">
+                <Lock size={15} /> Clinician Login
+              </a>
+              <a href="#/kiosk" className="hover:text-accent font-medium">Open Kiosk</a>
+              <span>Privacy · DPA Compliant</span>
+            </div>
           </Wrap>
         </div>
       </footer>
