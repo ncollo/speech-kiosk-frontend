@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { useEffect, useState } from 'react'
 import App from './App'
 import KioskPrototype from './KioskPrototype'
+import StaffPortal from './StaffPortal'
 import './index.css'
 
 function Root() {
@@ -12,7 +13,9 @@ function Root() {
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
-  return hash.startsWith('#/kiosk') ? <KioskPrototype /> : <App />
+  if (hash.startsWith('#/staff')) return <StaffPortal />
+  if (hash.startsWith('#/kiosk')) return <KioskPrototype />
+  return <App />
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
