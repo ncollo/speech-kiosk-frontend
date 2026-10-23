@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowRight, ArrowUpRight, ArrowUp, ArrowDown, Star, Phone, EnvelopeSimple, HandWaving, Heartbeat, Plus, Minus,
-  List, X, Lock,
+  List, X, Lock, ShieldCheck,
 } from '@phosphor-icons/react'
 import Kiosk from './Kiosk'
 
@@ -436,8 +436,9 @@ export default function App() {
                 <a href="#problem" className="hover:text-accent">Why front desks need it</a>
               </div>
               <div className="flex flex-col gap-2.5">
-                <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Clinical Staff</span>
+                <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Clinical Staff & Admin</span>
                 <a href="#/staff" className="text-accent font-semibold hover:underline flex items-center gap-1.5"><Lock size={14} />Staff & Clinician Portal</a>
+                <a href="#/admin" className="text-navy font-semibold hover:text-accent flex items-center gap-1.5"><ShieldCheck size={14} />Admin Suite (30 Staff)</a>
                 <a href="#/kiosk" className="hover:text-accent">Desk 3 Terminal</a>
                 <a href="#contact" className="hover:text-accent">Accessibility Support</a>
               </div>
@@ -461,6 +462,9 @@ export default function App() {
             <div className="flex items-center gap-6">
               <a href="#/staff" className="flex items-center gap-1.5 text-accent font-semibold hover:underline">
                 <Lock size={15} /> Clinician Login
+              </a>
+              <a href="#/admin" className="flex items-center gap-1.5 text-slate hover:text-accent font-semibold">
+                <ShieldCheck size={15} /> Admin Portal
               </a>
               <a href="#/kiosk" className="hover:text-accent font-medium">Open Kiosk</a>
               <span>Privacy · DPA Compliant</span>

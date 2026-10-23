@@ -13,7 +13,8 @@ function Root() {
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
-  if (hash.startsWith('#/staff')) return <StaffPortal />
+  if (hash.startsWith('#/admin')) return <StaffPortal defaultRole="admin" />
+  if (hash.startsWith('#/staff')) return <StaffPortal defaultRole="nurse" />
   if (hash.startsWith('#/kiosk')) return <KioskPrototype />
   return <App />
 }
