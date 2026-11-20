@@ -438,7 +438,7 @@ export default function App() {
               <div className="flex flex-col gap-2.5">
                 <span className="text-[12px] uppercase tracking-[0.1em] text-slate">Clinical Staff & Admin</span>
                 <a href="#/staff" className="text-accent font-semibold hover:underline flex items-center gap-1.5"><Lock size={14} />Staff & Clinician Portal</a>
-                <a href="#/admin" className="text-navy font-semibold hover:text-accent flex items-center gap-1.5"><ShieldCheck size={14} />Admin Suite (30 Staff)</a>
+                <a href="#/admin" className="text-navy font-semibold hover:text-accent flex items-center gap-1.5"><ShieldCheck size={14} />Admin Suite (50 Staff)</a>
                 <a href="#/kiosk" className="hover:text-accent">Desk 3 Terminal</a>
                 <a href="#contact" className="hover:text-accent">Accessibility Support</a>
               </div>
