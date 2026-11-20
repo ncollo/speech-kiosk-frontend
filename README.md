@@ -1,109 +1,63 @@
 # ClearCaption — AI Speech-to-Text Captioning Kiosk for Hospital Reception
 
-An accessible, real-time speech-to-text captioning kiosk designed for Deaf and hard-of-hearing (HoH) patients at hospital reception and intake desks.
+An accessible, real-time speech-to-text captioning kiosk and clinical triage platform designed for Deaf and hard-of-hearing patients at hospital reception desks.
 
-Deployed as a dual-display interactive system: a patient-facing 10-inch tablet kiosk paired with a clinician triage dashboard.
-
----
-
-## 🏥 Problem Statement & Clinical Context
-
-Communication barriers in clinical intake lead to diagnostic delays, heightened anxiety, and potential medical errors for Deaf and hard-of-hearing patients. Face masks, glass partitions, and rapid speech exacerbate these barriers.
-
-**ClearCaption** bridges this gap right at the reception counter:
-- Converts clinician/receptionist speech into high-contrast, large-font captions with sub-300ms latency.
-- Provides visual symptom cards with integrated American Sign Language (ASL) video references for non-verbal response.
-- Delivers a staff console with timestamped transcripts, statement flagging, and emergency triage escalation.
+This repository contains the complete full-stack system:
+- **Frontend (`./src`)**: React 19 + TypeScript + Vite + Tailwind v4 interface for the Landing Page, Patient Reception Kiosk (`#/kiosk`), Clinician Triage Console (`#/staff`), and Hospital Administration Suite (`#/admin`).
+- **Backend (`./backend`)**: Self-contained FastAPI + SQLAlchemy 2.0 + PostgreSQL 16 API service with PBKDF2-SHA256 PIN authentication, 50 seeded hospital staff accounts, 30 patient triage records with full turn-by-turn transcripts, 6 reception kiosk terminals, KSL interpreter dispatch queue, and DPA compliance audit logs.
 
 ---
 
-## ✨ Key Features
+## 🚀 Quickstart
 
-### 1. Patient-Facing Tablet Interface
-- **Ultra-Legible Captions:** Minimum 34px bold text using the Braille Institute's **Atkinson Hyperlegible** typeface.
-- **Cognitive Clarity:** Two-line conversational context (previous question faded above current response).
-- **Tactile Symptom Grid:** 10 visual symptom selector cards with generous touch targets (80px+ height).
-- **ASL Video Integration:** Each symptom card features an instant sign language video indicator.
-- **Ambient Connection Indicator:** Discreet, non-alarming status bar ("Listening · Session active").
-- **Zero Distraction Design:** Functional-only layout with zero drop shadows, gradients, or extraneous decorations.
-
-### 2. Clinician & Receptionist Triage Console
-- **Timestamped Transcripts:** Live chronological conversation log with speaker delineation.
-- **Critical Statement Flagging:** One-tap amber flags to highlight key statements for physician handoff.
-- **Triage Escalation:** Immediate trigger to alert emergency staff or request an in-person ASL interpreter.
-- **Microphone Management:** Dedicated mute and audio gain controls.
-
-### 3. Project Overview & Landing Page
-- Comprehensive marketing & documentation portal detailing system architecture.
-- Real medical photography and live interface showcase with interactive view toggles.
-- WCAG 2.2 AAA accessibility compliance breakdown and clinical impact metrics.
-
----
-
-## 🎨 Design System & Palette
-
-| Token | Hex | Usage |
-|---|---|---|
-| **Slate Teal** | `#1B4B4F` | Primary brand, headers, button backgrounds |
-| **Warm Off-White** | `#FAF8F3` | Surface background, optimal contrast |
-| **Muted Amber** | `#C97A2B` | Active symptom selection, triage alerts (never decorative) |
-| **Deep Charcoal** | `#123336` | Console frames, dark navigation surfaces |
-
----
-
-## 🛠️ Tech Stack
-
-- **Framework:** React 19 + TypeScript
-- **Build Tool:** Vite
-- **Styling:** Modular Vanilla CSS with scoped design tokens
-- **Typography:** Atkinson Hyperlegible (Google Fonts / Braille Institute)
-- **Routing:** React Router v7
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-
-### Installation
-
+### 1. Start the Backend (`./backend`)
 ```bash
-# Clone the repository
-git clone https://github.com/ncollo/speech-kiosk-frontend.git
-cd speech-kiosk-frontend
+npm run backend
+# or directly:
+# python -m uvicorn app.main:app --app-dir backend --reload --host 0.0.0.0 --port 8000
+```
+- **API Base**: `http://localhost:8000`
+- **Swagger UI**: `http://localhost:8000/docs`
+- **Database**: Connects automatically to PostgreSQL (`DATABASE_URL` in `backend/.env`), with automatic fallback to local SQLite (`backend/clearcaption.db`) if PostgreSQL is offline.
 
-# Install dependencies
+### 2. Start the Frontend
+```bash
 npm install
-
-# Start development server
 npm run dev
 ```
+- **Frontend URL**: `http://localhost:5173` (Vite automatically proxies all `/api/*` requests to `http://127.0.0.1:8000`).
 
-Visit `http://localhost:5173/` in your browser.
+---
 
-### Available Routes
-- `/` — Project landing page, feature highlights, and interface showcase
-- `/kiosk` — Interactive hospital kiosk application (Patient & Clinician views)
+## 🔑 Staff & Admin Credentials (50 Hospital Staff Accounts)
 
-### Production Build
+| Role | Sample Badge ID | Access PIN | Count |
+| :--- | :--- | :--- | :---: |
+| **Hospital Administrator** | `ADMIN-001` .. `ADMIN-004` | `9900` | 4 |
+| **Triage Nurse** | `NURSE-4029` .. `NURSE-4042` | `4821` | 14 |
+| **Reception Officer** | `RECEP-101` .. `RECEP-109` | `1234` | 9 |
+| **Medical Doctor** | `DOC-201` .. `DOC-210` | `1234` | 10 |
+| **KSL Interpreter** | `KSL-301` .. `KSL-307` | `1234` | 7 |
+| **Audiology Specialist** | `SPEC-501` .. `SPEC-506` | `1234` | 6 |
+| **Total Seeded Staff** | | | **50** |
+
+---
+
+## 🧭 Application Routes
+
+- **`#/`** — Hospital Landing Page & Interactive Kiosk Preview
+- **`#/kiosk`** (or `#/kiosk?terminal=TERM-01..TERM-06`) — Live Patient Check-In Kiosk Tablet (persists turns, body map regions, symptom cards, KSL interpreter requests, and 30s privacy wipes directly to PostgreSQL; receives live nurse messages)
+- **`#/staff`** — Clinician Triage Console (live queue, real-time transcript stream, tablet messaging, KSL interpreter dispatch, status & clinician assignment)
+- **`#/admin`** — Hospital Administration Suite (manage all 50+ staff accounts, add staff, reset PINs, enable/disable accounts, inspect patient registry, monitor 6 kiosk terminals, and audit DPA logs)
+
+---
+
+## 🧪 Running Tests & Build
 
 ```bash
+# Backend integration test suite (8 end-to-end API tests)
+npm run backend:test
+
+# Frontend production build & typecheck
 npm run build
-npm run preview
 ```
-
----
-
-## ♿ Accessibility Compliance
-
-- **WCAG 2.2 AAA:** Color contrast ratios exceed 7:1 for all critical text.
-- **ADA Title III:** Compliant interactive touch targets (minimum 64px).
-- **HIPAA Privacy:** Zero persistent voice recording stored locally on the public kiosk interface.
-
----
-
-## 📄 License
-
-MIT License. Designed with Deaf and Hard-of-Hearing advocacy principles for healthcare accessibility.
