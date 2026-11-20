@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   ArrowLeft, ArrowRight, ArrowCounterClockwise, Backspace, Keyboard, SquaresFour, PaperPlaneRight, Warning, HandWaving,
-  CheckCircle, Clock, UserCircle, Heartbeat, MapPin, ShieldCheck, X, Person, Lock,
+  CheckCircle, Clock, UserCircle, Heartbeat, MapPin, ShieldCheck, X, Person, Lock, ChatText, Desktop,
   type Icon,
 } from '@phosphor-icons/react'
 import { Header, TurnNurse, TurnPatient, SymptomCard, StatusStrip, CARDS, type Lang, type StatusState } from './Kiosk'
+import { catalogApi, kioskApi, terminalWsUrl, type DeskMessage, type InterpreterRequest, type KslPromptItem, type SymptomCardItem } from './api'
+import { iconForKey, matchSymptomsAndKsl } from './clinicalSpeech'
+import KslVideoPlayer from './KslVideoPlayer'
 
 /* ---------- Script ---------- */
 type Reply = 'type' | 'cards' | 'body' | 'chips' | 'end'
@@ -15,8 +18,8 @@ const SCRIPT: Step[] = [
   { en: () => 'Can you show me where it hurts?', sw: () => 'Unaweza kunionyesha mahali panapouma?', reply: 'body' },
   { en: () => 'How long have you felt this?', sw: () => 'Umehisi hivi kwa muda gani?', reply: 'chips' },
   {
-    en: (n) => `Thank you${n ? `, ${n}` : ''}. A doctor will see you shortly. Please take a seat near Desk 3.`,
-    sw: (n) => `Asante${n ? ` ${n}` : ''}. Daktari atakuona hivi punde. Tafadhali keti karibu na Dawati 3.`,
+    en: (n) => `Thank you${n ? `, ${n}` : ''}. A doctor will see you shortly. Please take a seat near your desk.`,
+    sw: (n) => `Asante${n ? ` ${n}` : ''}. Daktari atakuona hivi punde. Tafadhali keti karibu na dawati lako.`,
     reply: 'end',
   },
 ]
@@ -29,8 +32,20 @@ const DURATIONS: [string, string][] = [
 const URGENT = new Set(['Chest Pain', 'Shortness of Breath'])
 const CAPTION_PX = [32, 40, 48]
 
-type Turn = { who: 'nurse' | 'patient'; text: string; icon?: Icon }
-type Visit = { name: string; symptom?: [string, string]; places: string[]; duration?: string; urgent: boolean }
+type Turn = { id?: number; who: 'nurse' | 'patient'; text: string; icon?: Icon; edited?: boolean }
+type Visit = {
+  id?: string
+  name: string
+  symptom?: [string, string]
+  places: string[]
+  duration?: string
+  urgent: boolean
+  consentGiven?: boolean
+  disposition?: string | null
+  diagnosis?: string | null
+  prescription?: string | null
+  ward?: string | null
+}
 
 /* ---------- Body map ---------- */
 const R = (x: number, y: number, w: number, h: number, rx = 10) => ({ x, y, width: w, height: h, rx })
@@ -108,7 +123,15 @@ function OnScreenKeyboard({ value, onChange, onSend, onBack }: { value: string; 
 }
 
 /* ---------- Main Kiosk Screen ---------- */
-function Screen({ onStep }: { onStep: (label: string) => void }) {
+function Screen({
+  terminalId,
+  deskLabel,
+  onStep,
+}: {
+  terminalId: string
+  deskLabel: string
+  onStep: (label: string) => void
+}) {
   const [phase, setPhase] = useState<'welcome' | 'visit' | 'summary'>('welcome')
   const [lang, setLang] = useState<Lang>('EN')
   const [size, setSize] = useState(1)
@@ -122,20 +145,218 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
   const [selected, setSelected] = useState(-1)
   const [visit, setVisit] = useState<Visit>({ name: '', places: [], urgent: false })
   const [status, setStatus] = useState<StatusState>('listening')
-  const [interp, setInterp] = useState<'none' | 'open' | 'requested'>('none')
+  const [interpModal, setInterpModal] = useState(false)
+  const [interpReq, setInterpReq] = useState<InterpreterRequest | null>(null)
+  const [deskBanner, setDeskBanner] = useState<DeskMessage | null>(null)
+  const [serverOnline, setServerOnline] = useState(true)
+  const [consentGiven, setConsentGiven] = useState(true)
+  const [kslEnabled, setKslEnabled] = useState(true)
+  const [catalogCards, setCatalogCards] = useState<SymptomCardItem[]>([])
+  const [kslPrompts, setKslPrompts] = useState<KslPromptItem[]>([])
+  const [matchedCardIds, setMatchedCardIds] = useState<string[]>([])
+  const [activeKslPrompt, setActiveKslPrompt] = useState<KslPromptItem | null>(null)
+  const [purgedNotice, setPurgedNotice] = useState(false)
+
+  const cursorRef = useRef<number>(-1)
+  const latencyRef = useRef<number | undefined>(undefined)
+  const patientIdRef = useRef<string | undefined>(undefined)
+  const kslEnabledRef = useRef(kslEnabled)
+  const catalogCardsRef = useRef(catalogCards)
+  const kslPromptsRef = useRef(kslPrompts)
   const threadRef = useRef<HTMLDivElement>(null)
 
-  const say = (i: number, name = visit.name) => {
+  useEffect(() => {
+    patientIdRef.current = visit.id
+  }, [visit.id])
+
+  useEffect(() => {
+    kslEnabledRef.current = kslEnabled
+  }, [kslEnabled])
+
+  useEffect(() => {
+    catalogCardsRef.current = catalogCards
+  }, [catalogCards])
+
+  useEffect(() => {
+    kslPromptsRef.current = kslPrompts
+  }, [kslPrompts])
+
+  // Load dynamic symptom cards & KSL video prompts from backend catalog
+  useEffect(() => {
+    catalogApi.listSymptomCards().then((r) => setCatalogCards(r.items)).catch(() => undefined)
+    catalogApi.listKslPrompts().then((r) => setKslPrompts(r.items)).catch(() => undefined)
+  }, [])
+
+  const applyKeywordMatches = useCallback((text: string) => {
+    const { matchedCardIds: ids, matchedKslPrompt } = matchSymptomsAndKsl(
+      text,
+      catalogCardsRef.current,
+      kslPromptsRef.current,
+    )
+    if (ids.length > 0) setMatchedCardIds(ids)
+    if (kslEnabledRef.current && matchedKslPrompt) {
+      setActiveKslPrompt(matchedKslPrompt)
+    }
+  }, [])
+
+  // Low-latency WebSocket connection for real-time ASR captions, edits, repeat, mic status, and session end
+  useEffect(() => {
+    let ws: WebSocket | null = null
+    let closed = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+    const connect = () => {
+      if (closed) return
+      try {
+        ws = new WebSocket(terminalWsUrl(terminalId))
+        ws.onmessage = (ev) => {
+          try {
+            const msg = JSON.parse(ev.data)
+            if (!msg || typeof msg !== 'object') return
+            if (msg.type === 'live_caption' && typeof msg.text === 'string') {
+              setLive(msg.text)
+              setTyping(Boolean(msg.interim))
+              applyKeywordMatches(msg.text)
+            } else if (msg.type === 'turn_added' && msg.turn) {
+              const t = msg.turn as { id?: number; speaker: string; text: string }
+              if (t.speaker === 'nurse') {
+                setLive('')
+                setTyping(false)
+                setTurns((prev) => {
+                  if (t.id && prev.some((x) => x.id === t.id)) return prev
+                  const localIdx = prev.findIndex((x) => x.who === 'nurse' && !x.id && x.text === t.text)
+                  if (localIdx >= 0) {
+                    const copy = [...prev]
+                    copy[localIdx] = { ...copy[localIdx], id: t.id }
+                    return copy
+                  }
+                  return [...prev, { id: t.id, who: 'nurse', text: t.text }]
+                })
+                applyKeywordMatches(t.text)
+              }
+            } else if (msg.type === 'disposition_update') {
+              setVisit((v) => ({
+                ...v,
+                disposition: msg.disposition ?? v.disposition,
+                diagnosis: msg.diagnosis ?? v.diagnosis,
+                prescription: msg.prescription ?? v.prescription,
+                ward: msg.ward ?? v.ward,
+              }))
+              if (typeof msg.message === 'string') {
+                setDeskBanner({
+                  id: Date.now(),
+                  terminalId,
+                  patientId: msg.patientId ?? null,
+                  sender: msg.disposition || 'Clinical Update',
+                  text: msg.message,
+                  createdAt: new Date().toISOString(),
+                })
+                applyKeywordMatches(msg.message)
+              }
+              if (msg.turn) {
+                const t = msg.turn as { id?: number; text: string }
+                setTurns((prev) => (t.id && prev.some((x) => x.id === t.id) ? prev : [...prev, { id: t.id, who: 'nurse', text: t.text }]))
+              }
+            } else if (msg.type === 'turn_edited' && msg.turn) {
+              const t = msg.turn as { id: number; text: string }
+              setTurns((prev) => prev.map((x) => (x.id === t.id ? { ...x, text: t.text, edited: true } : x)))
+              applyKeywordMatches(t.text)
+            } else if (msg.type === 'repeat_caption' && typeof msg.text === 'string') {
+              setLive(msg.text)
+              setTyping(false)
+              applyKeywordMatches(msg.text)
+            } else if (msg.type === 'mic_status' && typeof msg.status === 'string') {
+              setStatus(msg.status === 'paused' || msg.status === 'muted' ? 'paused' : 'listening')
+            } else if (msg.type === 'desk_message' && msg.message) {
+              setDeskBanner(msg.message as DeskMessage)
+            } else if (msg.type === 'session_ended') {
+              if (msg.purged) {
+                setPurgedNotice(true)
+                setTimeout(() => setPurgedNotice(false), 5000)
+                setPhase('welcome')
+                setTurns([])
+                setLive('')
+                setStep(0)
+                setActiveKslPrompt(null)
+                setMatchedCardIds([])
+                setVisit({ name: '', places: [], urgent: false })
+              } else {
+                setPhase('summary')
+              }
+            }
+          } catch {
+            /* ignore malformed frame */
+          }
+        }
+        ws.onclose = () => {
+          if (!closed) retryTimer = setTimeout(connect, 2500)
+        }
+      } catch {
+        if (!closed) retryTimer = setTimeout(connect, 3000)
+      }
+    }
+
+    connect()
+    return () => {
+      closed = true
+      if (retryTimer) clearTimeout(retryTimer)
+      ws?.close()
+    }
+  }, [terminalId, applyKeywordMatches])
+
+  // Real-time heartbeat & message polling against the FastAPI backend
+  useEffect(() => {
+    cursorRef.current = -1
+    let active = true
+
+    const tick = async () => {
+      const t0 = performance.now()
+      try {
+        const res = await kioskApi.poll(terminalId, cursorRef.current, patientIdRef.current, latencyRef.current)
+        if (!active) return
+        latencyRef.current = Math.max(8, Math.round(performance.now() - t0))
+        setServerOnline(true)
+        if (status === 'lost') setStatus('listening')
+        if (cursorRef.current < 0) {
+          cursorRef.current = res.latestId
+        } else if (res.messages.length > 0) {
+          cursorRef.current = res.latestId
+          const latestMsg = res.messages[res.messages.length - 1]
+          setDeskBanner(latestMsg)
+          setTurns((prev) => [
+            ...prev,
+            ...res.messages.map((m) => ({ who: 'nurse' as const, text: `${m.sender}: ${m.text}` })),
+          ])
+        }
+        if (res.interpreter) {
+          setInterpReq(res.interpreter)
+        }
+      } catch {
+        if (!active) return
+        setServerOnline(false)
+      }
+    }
+
+    tick()
+    const id = setInterval(tick, 3000)
+    return () => {
+      active = false
+      clearInterval(id)
+    }
+  }, [terminalId, status])
+
+  const say = useCallback((i: number, name = visit.name) => {
     const s = SCRIPT[i]
     const full = (lang === 'SW' ? s.sw : s.en)(name)
     setStep(i); setMode(s.reply); setLive(''); setTyping(true); setSelected(-1)
+    applyKeywordMatches(full)
     let n = 0
     const t = setInterval(() => {
       n += 1
       setLive(full.slice(0, n))
       if (n >= full.length) { clearInterval(t); setTyping(false) }
-    }, 36)
-  }
+    }, 32)
+  }, [lang, visit.name, applyKeywordMatches])
 
   useEffect(() => {
     onStep(phase === 'welcome' ? 'Welcome' : phase === 'summary' ? 'Visit summary' : ['Name', 'Reason for visit', 'Body map', 'How long', 'Finished'][step])
@@ -143,44 +364,100 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
 
   useLayoutEffect(() => { threadRef.current?.scrollTo({ top: 1e6, behavior: 'smooth' }) }, [turns, live, mode])
 
-  const start = () => {
+  const start = async () => {
     setPhase('visit')
     setTurns([])
-    setVisit({ name: '', places: [], urgent: false })
     setPicked([])
     setDraft('')
-    setInterp('none')
-    setTimeout(() => say(0, ''), 400)
+    setInterpReq(null)
+    setDeskBanner(null)
+    setMatchedCardIds([])
+    setActiveKslPrompt(null)
+    setPurgedNotice(false)
+    const langLabel = lang === 'SW' ? 'Kiswahili & KSL' : 'English & KSL'
+    let createdId: string | undefined
+    try {
+      const created = await kioskApi.startIntake(terminalId, langLabel, consentGiven)
+      createdId = created.id
+    } catch {
+      /* continue gracefully even if offline */
+    }
+    setVisit({ id: createdId, name: '', places: [], urgent: false, consentGiven })
+    setTimeout(() => say(0, ''), 300)
   }
 
-  const reset = () => {
+  const wipeAndReset = async () => {
+    const pid = visit.id
+    try {
+      await kioskApi.wipe(terminalId, pid)
+    } catch {
+      /* ignore */
+    }
     setPhase('welcome')
     setTurns([])
     setLive('')
     setStep(0)
+    setActiveKslPrompt(null)
+    setMatchedCardIds([])
+    setVisit({ name: '', places: [], urgent: false })
+    setInterpReq(null)
+    setDeskBanner(null)
   }
 
-  const answer = (turn: Omit<Turn, 'who'>, patch: Partial<Visit> = {}) => {
+  const answer = async (
+    turn: Omit<Turn, 'who'>,
+    channel: 'keypad' | 'card' | 'body-map' | 'chips',
+    patch: Partial<Visit> = {},
+    apiPatch: Parameters<typeof kioskApi.updateIntake>[1] = {},
+  ) => {
+    const nurseQuestion = live
     const next = { ...visit, ...patch }
     setVisit(next)
-    // Synchronize to localStorage for clinician portal live monitoring
-    try {
-      localStorage.setItem('clearcaption_active_visit', JSON.stringify(next))
-    } catch (e) {
-      console.error(e)
-    }
-    setTurns((t) => [...t, { who: 'nurse', text: live }, { who: 'patient', ...turn }])
+    setTurns((t) => [...t, { who: 'nurse', text: nurseQuestion }, { who: 'patient', ...turn }])
     setLive('')
-    setTimeout(() => say(step + 1, next.name), 850)
+
+    if (next.id) {
+      try {
+        if (nurseQuestion) {
+          await kioskApi.addTurn(next.id, 'nurse', 'spoken', nurseQuestion)
+        }
+        await kioskApi.addTurn(next.id, 'patient', channel, turn.text)
+        await kioskApi.updateIntake(next.id, apiPatch)
+      } catch {
+        /* non-blocking */
+      }
+    }
+
+    setTimeout(() => say(step + 1, next.name), 750)
+  }
+
+  const handleRequestInterpreter = async () => {
+    try {
+      const req = await kioskApi.requestInterpreter(terminalId, visit.id)
+      setInterpReq(req)
+    } catch {
+      setInterpReq({
+        id: 0,
+        desk: deskLabel.split(' · ')[0],
+        patientId: visit.id ?? null,
+        patientName: visit.name || null,
+        source: 'kiosk',
+        requestedBy: 'Patient (kiosk)',
+        handledBy: null,
+        status: 'Pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+    }
   }
 
   const fs = CAPTION_PX[size]
+  const interpreterActive = Boolean(interpReq && interpReq.status !== 'Resolved')
 
-  /* Welcome Screen - Beautifully Styled with Landing Page Tokens */
+  /* Welcome Screen */
   if (phase === 'welcome') {
     return (
-      <div className="w-full max-w-[1240px] h-[820px] bg-canvas rounded-[28px] border border-line text-navy flex flex-col overflow-hidden shadow-sm">
-        {/* Header */}
+      <div className="w-full max-w-[1240px] h-[820px] bg-canvas rounded-[28px] border border-line text-navy flex flex-col overflow-hidden shadow-sm relative">
         <header className="h-18 px-8 md:px-12 bg-ash/70 backdrop-blur-md border-b border-line flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="w-9 h-9 rounded-[10px] bg-brand text-canvas grid place-items-center">
@@ -188,17 +465,36 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
             </span>
             <span className="font-display font-bold text-[22px] tracking-tight">ClearCaption</span>
           </div>
-          <span className="h-9 px-4 rounded-full bg-sky text-[14px] text-navy font-semibold inline-flex items-center">
-            Desk 3 · Outpatient Reception
+          <span className="h-9 px-4 rounded-full bg-sky text-[14px] text-navy font-semibold inline-flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${serverOnline ? 'bg-brand' : 'bg-amber'}`} />
+            {deskLabel}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[13px] text-slate font-medium">Kenyatta National Hospital</span>
           </div>
         </header>
 
-        {/* Welcome Content */}
+        {purgedNotice && (
+          <div className="mx-8 mt-4 px-5 py-3 rounded-[16px] bg-sky border border-line text-navy flex items-center justify-between gap-4">
+            <span className="text-[14px] font-semibold flex items-center gap-2">
+              <ShieldCheck size={20} className="text-brand" />
+              Session transcripts were purged immediately per your privacy choice (Kenya Data Protection Act, 2019).
+            </span>
+            <button onClick={() => setPurgedNotice(false)} className="text-slate hover:text-navy"><X size={16} /></button>
+          </div>
+        )}
+
+        {deskBanner && (
+          <div className="mx-8 mt-4 px-5 py-3 rounded-[16px] bg-mint border border-brand/30 text-navy flex items-center justify-between gap-4">
+            <span className="text-[15px] font-semibold flex items-center gap-2">
+              <ChatText size={20} className="text-brand" />
+              <span><strong>{deskBanner.sender}:</strong> {deskBanner.text}</span>
+            </span>
+            <button onClick={() => setDeskBanner(null)} className="text-slate hover:text-navy"><X size={16} /></button>
+          </div>
+        )}
+
         <main className="flex-1 grid lg:grid-cols-12 gap-8 px-8 md:px-12 py-10 items-center overflow-y-auto">
-          {/* Left Column: Friendly Reception Message */}
           <div className="lg:col-span-7 flex flex-col gap-6">
             <span className="self-start h-9 px-4 rounded-full bg-mint text-brand font-semibold text-[14px] inline-flex items-center gap-2 border border-brand/20">
               <HandWaving size={18} /> {lang === 'SW' ? 'Karibu · Welcome to Reception' : 'Welcome · Karibu Reception'}
@@ -218,16 +514,53 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
                 : 'Answer by tapping quick cards, typing your name, or pointing on the body map. A Kenyan Sign Language interpreter is available on call at any moment.'}
             </p>
 
-            <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <button
-                onClick={start}
-                className="group h-16 px-8 rounded-full bg-accent hover:bg-brand text-canvas font-bold text-[20px] flex items-center gap-3 transition-colors shadow-md"
-              >
-                <span>{lang === 'SW' ? 'Gusa kuanza' : 'Tap to start'}</span>
-                <span className="w-10 h-10 rounded-full bg-canvas text-accent grid place-items-center transition-transform group-hover:translate-x-1">
-                  <ArrowRight size={20} weight="bold" />
-                </span>
-              </button>
+            <div className="pt-2 flex flex-col gap-3">
+              {/* Explicit Data Protection Act 2019 Session Consent */}
+              <div className="rounded-[18px] bg-ash p-4 border border-line flex flex-col gap-2.5 max-w-[560px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-navy flex items-center gap-1.5">
+                    <ShieldCheck size={16} className="text-brand" />
+                    {lang === 'SW' ? 'Ridhaa ya Data (DPA 2019)' : 'Session Data Consent (DPA 2019)'}
+                  </span>
+                  <span className="text-[11px] text-slate">No audio is ever stored</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConsentGiven(true)}
+                    className={`min-h-[48px] px-3 py-2 rounded-[12px] border text-left text-[13px] font-semibold transition-all ${
+                      consentGiven
+                        ? 'bg-brand text-canvas border-brand shadow-sm'
+                        : 'bg-canvas text-navy border-line hover:border-accent'
+                    }`}
+                  >
+                    ✓ {lang === 'SW' ? 'Kubali kuhifadhi muhtasari' : 'Accept & Save Triage Summary'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConsentGiven(false)}
+                    className={`min-h-[48px] px-3 py-2 rounded-[12px] border text-left text-[13px] font-semibold transition-all ${
+                      !consentGiven
+                        ? 'bg-navy text-canvas border-navy shadow-sm'
+                        : 'bg-canvas text-navy border-line hover:border-accent'
+                    }`}
+                  >
+                    ✕ {lang === 'SW' ? 'Kataa (Futa baada ya ziara)' : 'Decline (Purge on Exit)'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <button
+                  onClick={start}
+                  className="group h-16 px-8 rounded-full bg-accent hover:bg-brand text-canvas font-bold text-[20px] flex items-center gap-3 transition-colors shadow-md"
+                >
+                  <span>{lang === 'SW' ? 'Gusa kuanza' : 'Tap to start'}</span>
+                  <span className="w-10 h-10 rounded-full bg-canvas text-accent grid place-items-center transition-transform group-hover:translate-x-1">
+                    <ArrowRight size={20} weight="bold" />
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div className="pt-4 flex items-center gap-6 text-[13px] text-slate border-t border-line">
@@ -236,9 +569,7 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
             </div>
           </div>
 
-          {/* Right Column: Preferences (Language & Text Size) */}
           <div className="lg:col-span-5 flex flex-col gap-5">
-            {/* Language Box */}
             <div className="rounded-[24px] bg-ash p-6 border border-line flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <span className="text-[12px] uppercase tracking-wider font-bold text-slate">
@@ -263,7 +594,6 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
               </div>
             </div>
 
-            {/* Text Size Box */}
             <div className="rounded-[24px] bg-ash p-6 border border-line flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <span className="text-[12px] uppercase tracking-wider font-bold text-slate">
@@ -291,30 +621,68 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
                 Preview: <span className="font-bold text-navy" style={{ fontSize: fs * 0.55 }}>Sample nurse caption text</span>
               </div>
             </div>
+
+            <div className="rounded-[24px] bg-ash p-5 border border-line flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[12px] uppercase tracking-wider font-bold text-slate">
+                  {lang === 'SW' ? 'Video za Lugha ya Alama (KSL)' : 'KSL Video Prompts'}
+                </p>
+                <p className="text-[13px] text-navy font-medium mt-0.5">
+                  {kslEnabled ? 'Auto-play KSL videos for triage questions' : 'Captions only (KSL videos off)'}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-pressed={kslEnabled}
+                onClick={() => setKslEnabled((v) => !v)}
+                className={`h-12 px-5 rounded-full font-bold text-[14px] transition-colors shrink-0 ${
+                  kslEnabled ? 'bg-brand text-canvas' : 'bg-canvas border border-line text-slate'
+                }`}
+              >
+                {kslEnabled ? 'KSL: ON' : 'KSL: OFF'}
+              </button>
+            </div>
           </div>
         </main>
 
-        {/* Bottom bar */}
         <footer className="h-12 bg-ash px-8 md:px-12 border-t border-line flex items-center justify-between text-[13px] text-slate">
-          <span>Outpatient Reception Tablet · Kenyatta National Hospital</span>
-          <button onClick={() => setInterp('open')} className="hover:text-accent font-semibold flex items-center gap-1.5">
-            <HandWaving size={16} /> Request KSL Interpreter
+          <span>Outpatient Reception Tablet ({terminalId}) · Kenyatta National Hospital</span>
+          <button onClick={() => setInterpModal(true)} className="hover:text-accent font-semibold flex items-center gap-1.5">
+            <HandWaving size={16} />
+            {interpreterActive ? `KSL Interpreter (${interpReq?.status})` : 'Request KSL Interpreter'}
           </button>
         </footer>
 
-        {interp === 'open' && <InterpreterSheet onClose={() => setInterp('none')} onConfirm={() => setInterp('requested')} />}
+        {interpModal && (
+          <InterpreterSheet
+            request={interpReq}
+            onClose={() => setInterpModal(false)}
+            onConfirm={handleRequestInterpreter}
+          />
+        )}
       </div>
     )
   }
 
-  /* Summary Screen - Clean Hospital Triage Card */
-  if (phase === 'summary') return <Summary visit={visit} onReset={reset} />
+  /* Summary Screen */
+  if (phase === 'summary') {
+    return (
+      <Summary
+        visit={visit}
+        deskLabel={deskLabel}
+        interpReq={interpReq}
+        deskBanner={deskBanner}
+        onDismissBanner={() => setDeskBanner(null)}
+        onReset={wipeAndReset}
+      />
+    )
+  }
 
   /* Active Live Intake Screen */
   const sheetH = mode === 'type' || mode === 'body' ? 390 : 280
   return (
     <div className="w-full max-w-[1240px] h-[820px] bg-canvas rounded-[28px] border border-line text-navy flex flex-col overflow-hidden shadow-sm relative">
-      <Header lang={lang} setLang={setLang} size={size} setSize={setSize} />
+      <Header lang={lang} setLang={setLang} size={size} setSize={setSize} desk={deskLabel} />
 
       {visit.urgent && (
         <div role="alert" className="absolute top-[76px] right-12 z-10 h-11 pl-3 pr-5 rounded-full bg-alert text-canvas font-bold text-[15px] flex items-center gap-2 shadow-md animate-pulse">
@@ -322,16 +690,38 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
         </div>
       )}
 
-      {/* Live Conversation Stream */}
-      <main ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-8 md:px-12 py-5 flex flex-col gap-4">
-        <div className="mt-auto" />
-        {turns.map((t, i) => (t.who === 'nurse' ? <TurnNurse key={i} text={t.text} /> : <TurnPatient key={i} text={t.text} icon={t.icon} />))}
-        {live && (
-          <div style={{ ['--cap' as string]: `${fs}px` }} className="[&_.text-caption]:text-[length:var(--cap)] [&_.text-caption]:leading-[1.25]">
-            <TurnNurse variant="live" text={live} />
+      {deskBanner && (
+        <div className="mx-8 mt-3 px-5 py-2.5 rounded-[14px] bg-mint border border-brand/30 text-navy flex items-center justify-between gap-4 z-10">
+          <span className="text-[14px] font-semibold flex items-center gap-2">
+            <ChatText size={18} className="text-brand" />
+            <span><strong>{deskBanner.sender}:</strong> {deskBanner.text}</span>
+          </span>
+          <button onClick={() => setDeskBanner(null)} className="text-slate hover:text-navy"><X size={16} /></button>
+        </div>
+      )}
+
+      {/* Live Conversation Stream + Floating KSL Video Prompt */}
+      <div className="flex-1 min-h-0 relative flex">
+        <main ref={threadRef} className="flex-1 min-h-0 overflow-y-auto px-8 md:px-12 py-5 flex flex-col gap-4">
+          <div className="mt-auto" />
+          {turns.map((t, i) => (t.who === 'nurse' ? <TurnNurse key={t.id ?? i} text={t.text} /> : <TurnPatient key={t.id ?? i} text={t.text} icon={t.icon} />))}
+          {live && (
+            <div style={{ ['--cap' as string]: `${fs}px` }} className="[&_.text-caption]:text-[length:var(--cap)] [&_.text-caption]:leading-[1.25]">
+              <TurnNurse variant="live" text={live} />
+            </div>
+          )}
+        </main>
+
+        {kslEnabled && activeKslPrompt && (
+          <div className="hidden md:flex items-end p-5 pl-0 shrink-0">
+            <KslVideoPlayer
+              prompt={activeKslPrompt}
+              lang={lang}
+              onClose={() => setActiveKslPrompt(null)}
+            />
           </div>
         )}
-      </main>
+      </div>
 
       {/* Response Tray Area */}
       <section className="shrink-0 bg-ash/80 backdrop-blur-md border-t border-line px-8 md:px-12 py-3 flex flex-col gap-2 transition-[height]" style={{ height: sheetH }}>
@@ -354,7 +744,15 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
             onSend={() => {
               const v = draft.trim()
               setDraft('')
-              answer({ text: v }, step === 0 ? { name: v } : {})
+              if (step === 0) {
+                answer({ text: v }, 'keypad', { name: v }, { name: v })
+              } else if (step === 1) {
+                answer({ text: v }, 'keypad', { symptom: [v, v] }, { symptom: v, symptom_sw: v })
+              } else if (step === 2) {
+                answer({ text: v }, 'keypad', { places: [v] }, { places: [v] })
+              } else {
+                answer({ text: v }, 'keypad', { duration: v }, { duration: v, complete: true })
+              }
             }}
           />
         ) : mode === 'cards' ? (
@@ -368,19 +766,58 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
               </button>
             </div>
             <div className="grid grid-cols-5 gap-3">
-              {CARDS.map(([en, sw, I], i) => (
-                <SymptomCard
-                  key={en}
-                  en={en}
-                  sw={sw}
-                  icon={I}
-                  state={i === selected ? 'selected' : 'default'}
-                  onSelect={() => {
-                    setSelected(i)
-                    setTimeout(() => answer({ text: `${en} · ${sw}`, icon: I }, { symptom: [en, sw], urgent: visit.urgent || URGENT.has(en) }), 320)
-                  }}
-                />
-              ))}
+              {(catalogCards.length > 0
+                ? catalogCards.slice(0, 10).map((c) => ({
+                    id: c.id,
+                    en: c.en,
+                    sw: c.sw,
+                    icon: iconForKey(c.iconKey),
+                    urgent: c.urgent,
+                  }))
+                : CARDS.map(([en, sw, icon], idx) => ({
+                    id: `SYM-${idx + 1}`,
+                    en,
+                    sw,
+                    icon,
+                    urgent: URGENT.has(en),
+                  }))
+              ).map((card, i) => {
+                const I = card.icon
+                return (
+                  <SymptomCard
+                    key={card.id}
+                    en={card.en}
+                    sw={card.sw}
+                    icon={I}
+                    highlighted={matchedCardIds.includes(card.id)}
+                    state={i === selected ? 'selected' : 'default'}
+                    onPlayKsl={() => {
+                      const match =
+                        kslPrompts.find((p) =>
+                          p.triggerKeywords.some((kw) => card.en.toLowerCase().includes(kw) || card.sw.toLowerCase().includes(kw)),
+                        ) || kslPrompts[0]
+                      if (match) {
+                        setKslEnabled(true)
+                        setActiveKslPrompt(match)
+                      }
+                    }}
+                    onSelect={() => {
+                      setSelected(i)
+                      const isUrgent = visit.urgent || card.urgent
+                      setTimeout(
+                        () =>
+                          answer(
+                            { text: `${card.en} · ${card.sw}`, icon: I },
+                            'card',
+                            { symptom: [card.en, card.sw], urgent: isUrgent },
+                            { symptom: card.en, symptom_sw: card.sw, urgent: isUrgent },
+                          ),
+                        280,
+                      )
+                    }}
+                  />
+                )
+              })}
             </div>
           </>
         ) : mode === 'body' ? (
@@ -415,7 +852,13 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
                   disabled={!picked.length}
                   onClick={() => {
                     const names = picked.map((id) => REGIONS.find((x) => x.id === id)!)
-                    answer({ text: names.map((n) => n.en).join(', '), icon: Person }, { places: names.map((n) => `${n.en} · ${n.sw}`) })
+                    const enPlaces = names.map((n) => n.en)
+                    answer(
+                      { text: enPlaces.join(', '), icon: Person },
+                      'body-map',
+                      { places: names.map((n) => `${n.en} · ${n.sw}`) },
+                      { places: enPlaces },
+                    )
                     setPicked([])
                   }}
                   className="flex-1 h-14 rounded-full bg-accent hover:bg-brand text-canvas text-[16px] font-bold flex items-center justify-center gap-2 disabled:opacity-40 transition-colors shadow-sm"
@@ -439,7 +882,14 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
               {DURATIONS.map(([en, sw]) => (
                 <button
                   key={en}
-                  onClick={() => answer({ text: `${en} · ${sw}`, icon: Clock }, { duration: `${en} · ${sw}` })}
+                  onClick={() =>
+                    answer(
+                      { text: `${en} · ${sw}`, icon: Clock },
+                      'chips',
+                      { duration: `${en} · ${sw}` },
+                      { duration: en, complete: true },
+                    )
+                  }
                   className="rounded-[16px] bg-canvas border border-line hover:border-accent p-4 text-left transition-colors flex flex-col justify-center gap-1 shadow-sm"
                 >
                   <Clock size={28} className="text-accent mb-1" />
@@ -456,8 +906,8 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
                 <CheckCircle size={36} weight="fill" />
               </span>
               <div>
-                <p className="font-display font-bold text-[26px] tracking-tight">You're checked in</p>
-                <p className="text-[16px] text-slate">Umesajiliwa. Tafadhali keti karibu na Dawati 3.</p>
+                <p className="font-display font-bold text-[26px] tracking-tight">You're checked in {visit.id ? `(${visit.id})` : ''}</p>
+                <p className="text-[16px] text-slate">Umesajiliwa. Your intake is live on the nurse console.</p>
               </div>
             </div>
             <button
@@ -470,15 +920,20 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
         )}
       </section>
 
-      {/* Bottom Status Strip */}
       <StatusStrip
         state={status}
         onToggle={() => setStatus((s) => (s === 'paused' ? 'listening' : 'paused'))}
-        onInterpreter={() => setInterp(interp === 'requested' ? 'requested' : 'open')}
-        interpreter={interp === 'requested'}
+        onInterpreter={() => setInterpModal(true)}
+        interpreter={interpreterActive}
       />
 
-      {interp === 'open' && <InterpreterSheet onClose={() => setInterp('none')} onConfirm={() => setInterp('requested')} />}
+      {interpModal && (
+        <InterpreterSheet
+          request={interpReq}
+          onClose={() => setInterpModal(false)}
+          onConfirm={handleRequestInterpreter}
+        />
+      )}
 
       {status === 'paused' && (
         <button onClick={() => setStatus('listening')} className="absolute inset-x-0 top-18 bottom-10 bg-navy/40 backdrop-blur-sm grid place-items-center z-20">
@@ -493,8 +948,18 @@ function Screen({ onStep }: { onStep: (label: string) => void }) {
 }
 
 /* ---------- Interpreter Request Modal ---------- */
-function InterpreterSheet({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
-  const [sent, setSent] = useState(false)
+function InterpreterSheet({
+  request,
+  onClose,
+  onConfirm,
+}: {
+  request: InterpreterRequest | null
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}) {
+  const [submitting, setSubmitting] = useState(false)
+  const sent = Boolean(request && request.status !== 'Resolved')
+
   return (
     <div className="absolute inset-0 z-30 bg-navy/50 backdrop-blur-md grid place-items-center p-4">
       <div role="dialog" aria-modal className="w-full max-w-[560px] rounded-[28px] bg-canvas border border-line p-8 flex flex-col gap-5 shadow-2xl">
@@ -509,9 +974,13 @@ function InterpreterSheet({ onClose, onConfirm }: { onClose: () => void; onConfi
 
         {sent ? (
           <div className="flex flex-col gap-2">
-            <h3 className="font-display font-bold text-[24px] text-navy">Interpreter Dispatched</h3>
+            <h3 className="font-display font-bold text-[24px] text-navy">
+              {request?.status === 'Dispatched' ? 'Interpreter En Route to Desk' : 'Interpreter Requested'}
+            </h3>
             <p className="text-[16px] text-slate leading-relaxed">
-              Mkalimani ameombwa. Reception and triage nurses have been notified. An on-call Kenyan Sign Language interpreter is coming to Desk 3.
+              {request?.status === 'Dispatched'
+                ? `Mkalimani anakuja sasa (${request.handledBy || 'KSL Unit'}). Please stay at ${request.desk}.`
+                : 'Mkalimani ameombwa. Reception and triage nurses have been notified and are dispatching our on-duty certified KSL interpreter.'}
             </p>
             <button onClick={onClose} className="mt-4 h-13 rounded-full bg-accent text-canvas font-bold text-[16px]">
               Return to Session
@@ -528,13 +997,15 @@ function InterpreterSheet({ onClose, onConfirm }: { onClose: () => void; onConfi
                 Cancel · Ghairi
               </button>
               <button
-                onClick={() => {
-                  setSent(true)
-                  onConfirm()
+                disabled={submitting}
+                onClick={async () => {
+                  setSubmitting(true)
+                  await onConfirm()
+                  setSubmitting(false)
                 }}
-                className="flex-1 h-13 rounded-full bg-accent hover:bg-brand text-canvas font-bold text-[15px] shadow-sm"
+                className="flex-1 h-13 rounded-full bg-accent hover:bg-brand text-canvas font-bold text-[15px] shadow-sm disabled:opacity-50"
               >
-                Yes, Call Interpreter
+                {submitting ? 'Requesting...' : 'Yes, Call Interpreter'}
               </button>
             </div>
           </div>
@@ -545,7 +1016,21 @@ function InterpreterSheet({ onClose, onConfirm }: { onClose: () => void; onConfi
 }
 
 /* ---------- Summary Screen ---------- */
-function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
+function Summary({
+  visit,
+  deskLabel,
+  interpReq,
+  deskBanner,
+  onDismissBanner,
+  onReset,
+}: {
+  visit: Visit
+  deskLabel: string
+  interpReq: InterpreterRequest | null
+  deskBanner: DeskMessage | null
+  onDismissBanner: () => void
+  onReset: () => void
+}) {
   const [left, setLeft] = useState(30)
   const [hold, setHold] = useState(false)
   const [handoffSuccess, setHandoffSuccess] = useState(false)
@@ -566,17 +1051,24 @@ function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
   }, [hold, onReset])
 
   const rows: [Icon, string, string][] = [
-    [UserCircle, 'Patient Name', visit.name || 'Anonymous'],
+    [UserCircle, 'Patient Name', `${visit.name || 'Anonymous'}${visit.id ? ` (${visit.id})` : ''}`],
     [Heartbeat, 'Chief Complaint', visit.symptom ? visit.symptom.join(' · ') : 'Not stated'],
     [MapPin, 'Pain Location', visit.places.length ? visit.places.join(', ') : 'Not stated'],
     [Clock, 'Duration', visit.duration ?? 'Not stated'],
+    ...(visit.diagnosis ? ([[CheckCircle, 'Clinical Diagnosis', visit.diagnosis]] as [Icon, string, string][]) : []),
+    ...(visit.prescription ? ([[ShieldCheck, 'Prescription / Medicine', visit.prescription]] as [Icon, string, string][]) : []),
+    ...(visit.disposition
+      ? ([[Heartbeat, 'Hospital Outcome', visit.ward ? `${visit.disposition} · ${visit.ward}` : visit.disposition]] as [Icon, string, string][])
+      : []),
   ]
 
-  const handleSendToClinician = () => {
-    try {
-      localStorage.setItem('clearcaption_active_visit', JSON.stringify(visit))
-    } catch (e) {
-      console.error(e)
+  const handleSendToClinician = async () => {
+    if (visit.id) {
+      try {
+        await kioskApi.updateIntake(visit.id, { complete: true })
+      } catch {
+        /* already synced */
+      }
     }
     setHandoffSuccess(true)
     setTimeout(() => setHandoffSuccess(false), 3000)
@@ -584,7 +1076,6 @@ function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
 
   return (
     <div className="w-full max-w-[1240px] h-[820px] bg-canvas rounded-[28px] border border-line text-navy flex flex-col overflow-hidden shadow-sm">
-      {/* Top Header */}
       <header className="h-18 px-8 md:px-12 bg-ash/70 backdrop-blur-md border-b border-line flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="w-9 h-9 rounded-[10px] bg-brand text-canvas grid place-items-center">
@@ -593,22 +1084,44 @@ function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
           <span className="font-display font-bold text-[22px] tracking-tight">ClearCaption</span>
         </div>
         <span className="h-9 px-4 rounded-full bg-sky text-[14px] text-navy font-semibold inline-flex items-center">
-          Desk 3 Triage Handoff
+          {deskLabel} · Triage Handoff
         </span>
       </header>
+
+      {deskBanner && (
+        <div className="mx-8 mt-4 px-5 py-3 rounded-[16px] bg-mint border border-brand/30 text-navy flex items-center justify-between gap-4">
+          <span className="text-[15px] font-semibold flex items-center gap-2">
+            <ChatText size={20} className="text-brand" />
+            <span><strong>{deskBanner.sender}:</strong> {deskBanner.text}</span>
+          </span>
+          <button onClick={onDismissBanner} className="text-slate hover:text-navy"><X size={16} /></button>
+        </div>
+      )}
 
       <main className="flex-1 grid lg:grid-cols-12 gap-8 px-8 md:px-12 py-8 overflow-y-auto">
         <section className="lg:col-span-8 flex flex-col gap-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] uppercase font-bold tracking-wider text-slate">For the triage nurse · Kwa muuguzi</p>
+              <p className="text-[12px] uppercase font-bold tracking-wider text-slate">
+                For the triage nurse · Kwa muuguzi ·{' '}
+                <span className={visit.consentGiven === false ? 'text-amber' : 'text-brand'}>
+                  {visit.consentGiven === false ? 'Ephemeral (Purges on Exit)' : 'Consented Storage'}
+                </span>
+              </p>
               <h1 className="font-display font-bold text-[34px] tracking-tight text-navy">Visit Intake Summary</h1>
             </div>
-            {visit.urgent && (
-              <span className="h-10 px-4 rounded-full bg-alert text-canvas font-bold text-[14px] flex items-center gap-1.5 shadow-sm">
-                <Warning size={18} weight="fill" /> Urgent: Immediate Clinical Review
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {interpReq && interpReq.status !== 'Resolved' && (
+                <span className="h-10 px-4 rounded-full bg-amber text-navy font-bold text-[13px] flex items-center gap-1.5">
+                  <HandWaving size={16} /> KSL Interpreter: {interpReq.status}
+                </span>
+              )}
+              {visit.urgent && (
+                <span className="h-10 px-4 rounded-full bg-alert text-canvas font-bold text-[14px] flex items-center gap-1.5 shadow-sm">
+                  <Warning size={18} weight="fill" /> Urgent: Immediate Clinical Review
+                </span>
+              )}
+            </div>
           </div>
 
           <ul className="rounded-[20px] bg-ash/50 border border-line divide-y divide-line">
@@ -628,7 +1141,7 @@ function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
               onClick={handleSendToClinician}
               className="h-13 px-6 rounded-full bg-accent hover:bg-brand text-canvas font-bold text-[15px] flex items-center gap-2 transition-colors shadow-sm"
             >
-              <PaperPlaneRight size={18} /> Send to Nurse Station Console
+              <PaperPlaneRight size={18} /> Confirm Handoff to Nurse Station
             </button>
             <a
               href="#/staff"
@@ -637,14 +1150,13 @@ function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
               <Lock size={16} /> Open Staff Portal
             </a>
             {handoffSuccess && (
-              <span className="text-[13px] text-brand font-bold flex items-center gap-1 animate-fadeIn">
-                <CheckCircle size={18} weight="fill" /> Sent to Desk 3 Clinician Console!
+              <span className="text-[13px] text-brand font-bold flex items-center gap-1">
+                <CheckCircle size={18} weight="fill" /> Synced to Clinician Console ({visit.id || 'Live'})!
               </span>
             )}
           </div>
         </section>
 
-        {/* Privacy Wipe Aside */}
         <aside className="lg:col-span-4 rounded-[24px] bg-ash p-6 border border-line flex flex-col gap-4">
           <span className="w-12 h-12 rounded-[14px] bg-canvas border border-line text-brand grid place-items-center">
             <ShieldCheck size={28} />
@@ -653,7 +1165,7 @@ function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
             This screen clears itself for patient privacy.
           </h2>
           <p className="text-[14px] leading-relaxed text-slate">
-            Skrini hii itafutika yenyewe. Data is not permanently stored on the tablet.
+            Skrini hii itafutika yenyewe. Data is wiped from the tablet and logged to the hospital DPA audit trail.
           </p>
 
           <div className="flex items-baseline gap-2 pt-2">
@@ -686,14 +1198,49 @@ function Summary({ visit, onReset }: { visit: Visit; onReset: () => void }) {
 }
 
 /* ---------- Prototype Shell Wrapper ---------- */
+const DEFAULT_TERMINALS = [
+  { id: 'TERM-01', desk: 'Desk 1', location: 'Emergency Admitting' },
+  { id: 'TERM-02', desk: 'Desk 2', location: 'Pediatric Registration' },
+  { id: 'TERM-03', desk: 'Desk 3', location: 'Main Outpatient Lobby' },
+  { id: 'TERM-04', desk: 'Desk 4', location: 'ENT & Audiology Desk' },
+  { id: 'TERM-05', desk: 'Desk 5', location: 'Maternity Wing Counter' },
+  { id: 'TERM-06', desk: 'Desk 6', location: 'Specialized Diagnostics' },
+]
+
+function parseTerminalFromHash(): string {
+  const idx = window.location.hash.indexOf('?')
+  if (idx >= 0) {
+    const params = new URLSearchParams(window.location.hash.slice(idx + 1))
+    const t = params.get('terminal')?.toUpperCase()
+    if (t && /^TERM-0[1-6]$/.test(t)) return t
+  }
+  return 'TERM-03'
+}
+
 export default function KioskPrototype() {
   const [label, setLabel] = useState('Welcome')
   const [key, setKey] = useState(0)
+  const [terminals, setTerminals] = useState(DEFAULT_TERMINALS)
+  const [terminalId, setTerminalId] = useState<string>(parseTerminalFromHash)
+
+  useEffect(() => {
+    kioskApi.terminals().then((list) => {
+      if (list.length) setTerminals(list)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const onHash = () => setTerminalId(parseTerminalFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  const currentTerminal = terminals.find((t) => t.id === terminalId) ?? DEFAULT_TERMINALS[2]
+  const deskLabel = `${currentTerminal.desk} · ${currentTerminal.location}`
 
   return (
     <div className="min-h-screen bg-canvas text-navy font-ui flex flex-col">
-      {/* Top Prototype Navigation Bar */}
-      <nav className="h-16 px-4 md:px-8 bg-ash/70 backdrop-blur-md border-b border-line flex items-center justify-between">
+      <nav className="h-16 px-4 md:px-8 bg-ash/70 backdrop-blur-md border-b border-line flex items-center justify-between gap-3">
         <a
           href="#/"
           className="h-10 px-4 rounded-full bg-canvas hover:bg-line border border-line flex items-center gap-2 font-medium text-[14px] text-navy transition-colors"
@@ -701,8 +1248,26 @@ export default function KioskPrototype() {
           <ArrowLeft size={16} /> Back to Hospital Home
         </a>
 
-        <div className="hidden sm:flex items-center gap-3 text-[14px]">
-          <span className="text-slate">Outpatient Terminal</span>
+        <div className="hidden md:flex items-center gap-3 text-[14px]">
+          <span className="flex items-center gap-1.5 text-slate font-medium">
+            <Desktop size={16} className="text-brand" /> Terminal:
+          </span>
+          <select
+            aria-label="Select Reception Terminal"
+            value={terminalId}
+            onChange={(e) => {
+              const next = e.target.value
+              setTerminalId(next)
+              window.location.hash = `#/kiosk?terminal=${next}`
+            }}
+            className="h-9 px-3 rounded-full bg-canvas border border-line text-[13px] font-semibold text-navy outline-none focus:border-accent"
+          >
+            {terminals.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.id} — {t.desk} · {t.location}
+              </option>
+            ))}
+          </select>
           <span className="h-8 px-3 rounded-full bg-mint text-brand font-bold text-[13px] flex items-center border border-brand/20">
             {label}
           </span>
@@ -724,9 +1289,8 @@ export default function KioskPrototype() {
         </div>
       </nav>
 
-      {/* Main Kiosk Viewport */}
       <div className="flex-1 flex items-center justify-center p-3 md:p-6 bg-ash/40">
-        <Screen key={key} onStep={setLabel} />
+        <Screen key={`${terminalId}-${key}`} terminalId={terminalId} deskLabel={deskLabel} onStep={setLabel} />
       </div>
     </div>
   )
