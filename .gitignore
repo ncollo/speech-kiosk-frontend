@@ -26,3 +26,11 @@ dist-ssr
 # Figma design export archive
 figma design/
 figma updated design/
+
+# Backend
+backend/.env
+backend/**/__pycache__/
+backend/.venv/
+backend/*.db
+backend/.pytest_cache/
+backend/media/
