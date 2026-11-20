@@ -1,183 +1,457 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Lock, ArrowLeft, CheckCircle, Warning, Stethoscope, Clock, MapPin,
   Heartbeat, ShieldCheck, SignOut, PhoneCall, PaperPlaneRight,
   ChatText, FirstAidKit, CaretRight, Broadcast, Users, Desktop,
-  MagnifyingGlass, UserPlus, Check, X
+  MagnifyingGlass, UserPlus, Check, X, Key, ArrowsClockwise, HandWaving, UserCheck,
+  Microphone, MicrophoneSlash, PencilSimple, ArrowCounterClockwise, VideoCamera,
+  UploadSimple, Plus, Trash, Play,
 } from '@phosphor-icons/react'
+import {
+  api,
+  auth,
+  catalogApi,
+  clockTime,
+  terminalWsUrl,
+  timeAgo,
+  ROLES,
+  STAFF_STATUSES,
+  PATIENT_STATUSES,
+  type AuditEntry,
+  type InterpreterRequest,
+  type KslPromptItem,
+  type Patient,
+  type PatientStatus,
+  type StaffRole,
+  type StaffStatus,
+  type StaffUser,
+  type Stats,
+  type SymptomCardItem,
+  type Terminal,
+} from './api'
+import {
+  ICON_OPTIONS,
+  applyClinicalVocabulary,
+  iconForKey,
+  isSpeechRecognitionSupported,
+  startSpeechCapture,
+  type SpeechCaptureController,
+} from './clinicalSpeech'
+import KslVideoPlayer from './KslVideoPlayer'
 
 export type Role = 'nurse' | 'admin'
 
-export type StaffUser = {
-  id: string
-  name: string
-  role: 'Hospital Administrator' | 'Triage Nurse' | 'Reception Officer' | 'Medical Doctor' | 'KSL Interpreter' | 'Audiology Specialist'
-  department: string
-  email: string
-  phone: string
-  status: 'Active' | 'On-Duty' | 'Break' | 'Offline'
-  lastLogin: string
-  badgeId: string
-}
-
-export type TriagePatient = {
-  id: string
-  name: string
-  symptom: string
-  symptomSw: string
-  places: string[]
-  duration: string
-  urgent: boolean
-  time: string
-  desk: string
-  lang: string
-  status: 'Waiting' | 'In Triage' | 'With Doctor' | 'Completed'
-}
-
-// Exactly 30 Hospital System Users & Staff
-export const HOSPITAL_USERS: StaffUser[] = [
-  { id: 'USR-01', name: 'Dr. Geoffrey Mutiso', role: 'Hospital Administrator', department: 'Executive Medical Operations', email: 'g.mutiso@knh.or.ke', phone: '+254 711 001 001', status: 'Active', lastLogin: '10 mins ago', badgeId: 'ADMIN-001' },
-  { id: 'USR-02', name: 'Sarah Wambui', role: 'Hospital Administrator', department: 'Health Information & Systems', email: 's.wambui@knh.or.ke', phone: '+254 711 001 002', status: 'Active', lastLogin: '25 mins ago', badgeId: 'ADMIN-002' },
-  { id: 'USR-03', name: 'David Kiprono', role: 'Hospital Administrator', department: 'Clinical Quality & Accessibility', email: 'd.kiprono@knh.or.ke', phone: '+254 711 001 003', status: 'On-Duty', lastLogin: '1 hour ago', badgeId: 'ADMIN-003' },
-  { id: 'USR-04', name: 'Nurse Joyce Mwangi', role: 'Triage Nurse', department: 'Desk 3 · Outpatient Reception', email: 'j.mwangi@knh.or.ke', phone: '+254 722 002 001', status: 'On-Duty', lastLogin: 'Active now', badgeId: 'NURSE-4029' },
-  { id: 'USR-05', name: 'Nurse Beatrice Akinyi', role: 'Triage Nurse', department: 'Desk 1 · Emergency Triage', email: 'b.akinyi@knh.or.ke', phone: '+254 722 002 002', status: 'On-Duty', lastLogin: '12 mins ago', badgeId: 'NURSE-4030' },
-  { id: 'USR-06', name: 'Nurse Grace Njeri', role: 'Triage Nurse', department: 'Desk 2 · Pediatric Reception', email: 'g.njeri@knh.or.ke', phone: '+254 722 002 003', status: 'On-Duty', lastLogin: '30 mins ago', badgeId: 'NURSE-4031' },
-  { id: 'USR-07', name: 'Nurse Mercy Korir', role: 'Triage Nurse', department: 'Desk 4 · Specialized Clinics', email: 'm.korir@knh.or.ke', phone: '+254 722 002 004', status: 'Break', lastLogin: '2 hours ago', badgeId: 'NURSE-4032' },
-  { id: 'USR-08', name: 'Nurse Agnes Wanjiku', role: 'Triage Nurse', department: 'Desk 3 · Outpatient Reception', email: 'a.wanjiku@knh.or.ke', phone: '+254 722 002 005', status: 'Active', lastLogin: '45 mins ago', badgeId: 'NURSE-4033' },
-  { id: 'USR-09', name: 'Nurse Esther Moraa', role: 'Triage Nurse', department: 'Desk 5 · Maternity Reception', email: 'e.moraa@knh.or.ke', phone: '+254 722 002 006', status: 'On-Duty', lastLogin: '15 mins ago', badgeId: 'NURSE-4034' },
-  { id: 'USR-10', name: 'Nurse Lilian Chepkemoi', role: 'Triage Nurse', department: 'Desk 6 · Surgical Outpatient', email: 'l.chepkemoi@knh.or.ke', phone: '+254 722 002 007', status: 'Offline', lastLogin: 'Yesterday', badgeId: 'NURSE-4035' },
-  { id: 'USR-11', name: 'Nurse Catherine Nduta', role: 'Triage Nurse', department: 'Emergency Rapid Response', email: 'c.nduta@knh.or.ke', phone: '+254 722 002 008', status: 'On-Duty', lastLogin: '5 mins ago', badgeId: 'NURSE-4036' },
-  { id: 'USR-12', name: 'Kevin Otieno', role: 'Reception Officer', department: 'Desk 1 · Emergency Front Counter', email: 'k.otieno@knh.or.ke', phone: '+254 733 003 001', status: 'On-Duty', lastLogin: 'Active now', badgeId: 'RECEP-101' },
-  { id: 'USR-13', name: 'Maryanne Achieng', role: 'Reception Officer', department: 'Desk 3 · Main Outpatient Lobby', email: 'm.achieng@knh.or.ke', phone: '+254 733 003 002', status: 'On-Duty', lastLogin: '3 mins ago', badgeId: 'RECEP-102' },
-  { id: 'USR-14', name: 'Samuel Kilonzo', role: 'Reception Officer', department: 'Desk 2 · Pediatric Registration', email: 's.kilonzo@knh.or.ke', phone: '+254 733 003 003', status: 'Active', lastLogin: '18 mins ago', badgeId: 'RECEP-103' },
-  { id: 'USR-15', name: 'Brenda Mutheu', role: 'Reception Officer', department: 'Desk 4 · ENT & Specialized Desk', email: 'b.mutheu@knh.or.ke', phone: '+254 733 003 004', status: 'On-Duty', lastLogin: '22 mins ago', badgeId: 'RECEP-104' },
-  { id: 'USR-16', name: 'Collins Nderitu', role: 'Reception Officer', department: 'Desk 5 · Maternity Wing Desk', email: 'c.nderitu@knh.or.ke', phone: '+254 733 003 005', status: 'Break', lastLogin: '1 hour ago', badgeId: 'RECEP-105' },
-  { id: 'USR-17', name: 'Halima Abdi', role: 'Reception Officer', department: 'Desk 6 · Imaging & Lab Front Counter', email: 'h.abdi@knh.or.ke', phone: '+254 733 003 006', status: 'Offline', lastLogin: 'Yesterday', badgeId: 'RECEP-106' },
-  { id: 'USR-18', name: 'Dr. Patrick Kariuki', role: 'Medical Doctor', department: 'Consultation Room 1 · General Medicine', email: 'p.kariuki@knh.or.ke', phone: '+254 744 004 001', status: 'On-Duty', lastLogin: '20 mins ago', badgeId: 'DOC-201' },
-  { id: 'USR-19', name: 'Dr. Amina Hassan', role: 'Medical Doctor', department: 'Consultation Room 2 · Urgent Care', email: 'a.hassan@knh.or.ke', phone: '+254 744 004 002', status: 'On-Duty', lastLogin: '8 mins ago', badgeId: 'DOC-202' },
-  { id: 'USR-20', name: 'Dr. Kennedy Omondi', role: 'Medical Doctor', department: 'Cardiology & Chest Clinic', email: 'k.omondi@knh.or.ke', phone: '+254 744 004 003', status: 'Active', lastLogin: '1 hour ago', badgeId: 'DOC-203' },
-  { id: 'USR-21', name: 'Dr. Jane Muthoni', role: 'Medical Doctor', department: 'Pediatric Medical Officer', email: 'j.muthoni@knh.or.ke', phone: '+254 744 004 004', status: 'On-Duty', lastLogin: '35 mins ago', badgeId: 'DOC-204' },
-  { id: 'USR-22', name: 'Dr. Victor Koech', role: 'Medical Doctor', department: 'Emergency Medicine Registrar', email: 'v.koech@knh.or.ke', phone: '+254 744 004 005', status: 'On-Duty', lastLogin: '14 mins ago', badgeId: 'DOC-205' },
-  { id: 'USR-23', name: 'Dr. Rose Nyambura', role: 'Medical Doctor', department: 'Obstetrics & Gynaecology', email: 'r.nyambura@knh.or.ke', phone: '+254 744 004 006', status: 'Break', lastLogin: '3 hours ago', badgeId: 'DOC-206' },
-  { id: 'USR-24', name: 'George Wafula', role: 'KSL Interpreter', department: 'Hospital Deaf Inclusion & KSL Unit', email: 'g.wafula@knh.or.ke', phone: '+254 755 005 001', status: 'On-Duty', lastLogin: 'Active now', badgeId: 'KSL-301' },
-  { id: 'USR-25', name: 'Susan Makena', role: 'KSL Interpreter', department: 'Hospital Deaf Inclusion & KSL Unit', email: 's.makena@knh.or.ke', phone: '+254 755 005 002', status: 'On-Duty', lastLogin: '6 mins ago', badgeId: 'KSL-302' },
-  { id: 'USR-26', name: 'Dennis Kipchumba', role: 'KSL Interpreter', department: 'Emergency On-Call KSL Network', email: 'd.kipchumba@knh.or.ke', phone: '+254 755 005 003', status: 'Active', lastLogin: '40 mins ago', badgeId: 'KSL-303' },
-  { id: 'USR-27', name: 'Pauline Adhiambo', role: 'KSL Interpreter', department: 'Hospital Deaf Inclusion & KSL Unit', email: 'p.adhiambo@knh.or.ke', phone: '+254 755 005 004', status: 'Offline', lastLogin: 'Yesterday', badgeId: 'KSL-304' },
-  { id: 'USR-28', name: 'Dr. Evans Muli', role: 'Audiology Specialist', department: 'Audiology & Speech Sciences', email: 'e.muli@knh.or.ke', phone: '+254 766 006 001', status: 'Active', lastLogin: '50 mins ago', badgeId: 'SPEC-501' },
-  { id: 'USR-29', name: 'Rachel Jerop', role: 'Audiology Specialist', department: 'Assistive Communication Lab', email: 'r.jerop@knh.or.ke', phone: '+254 766 006 002', status: 'On-Duty', lastLogin: '2 hours ago', badgeId: 'SPEC-502' },
-  { id: 'USR-30', name: 'Anthony Musyoka', role: 'Audiology Specialist', department: 'ENT Diagnostic Center', email: 'a.musyoka@knh.or.ke', phone: '+254 766 006 003', status: 'Offline', lastLogin: '2 days ago', badgeId: 'SPEC-503' },
-]
-
-// 30 Realistic Hospital Patient Intake Records
-export const PATIENT_RECORDS: TriagePatient[] = [
-  { id: 'PT-1042', name: 'Wanjiru Karanja', symptom: 'Chest Pain', symptomSw: 'Maumivu ya Kifua', places: ['Chest, left', 'Throat'], duration: 'Since this morning', urgent: true, time: '2 mins ago', desk: 'Desk 3', lang: 'Kiswahili & KSL', status: 'Waiting' },
-  { id: 'PT-1041', name: 'Brian Omondi', symptom: 'Fever or Chills', symptomSw: 'Homa', places: ['Head'], duration: 'A few days', urgent: false, time: '14 mins ago', desk: 'Desk 2', lang: 'English', status: 'In Triage' },
-  { id: 'PT-1040', name: 'Faith Chebet', symptom: 'Abdominal Pain', symptomSw: 'Maumivu ya Tumbo', places: ['Stomach'], duration: 'More than a week', urgent: false, time: '28 mins ago', desk: 'Desk 3', lang: 'Kiswahili', status: 'With Doctor' },
-  { id: 'PT-1039', name: 'Samuel Githinji', symptom: 'Shortness of Breath', symptomSw: 'Pumzi Fupi', places: ['Chest, right'], duration: 'Less than an hour', urgent: true, time: '35 mins ago', desk: 'Desk 1', lang: 'Kiswahili & KSL', status: 'With Doctor' },
-  { id: 'PT-1038', name: 'Amina Mohamed', symptom: 'Dizziness', symptomSw: 'Kizunguzungu', places: ['Head'], duration: 'Since this morning', urgent: false, time: '42 mins ago', desk: 'Desk 3', lang: 'English', status: 'Completed' },
-  { id: 'PT-1037', name: 'Kelvin Mutua', symptom: 'Headache', symptomSw: 'Kuumwa na Kichwa', places: ['Head'], duration: 'A few days', urgent: false, time: '50 mins ago', desk: 'Desk 4', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1036', name: 'Mercy Atieno', symptom: 'Swelling', symptomSw: 'Kuvimba Mwili', places: ['Right leg', 'Left leg'], duration: 'More than a week', urgent: false, time: '1 hour ago', desk: 'Desk 2', lang: 'KSL Assisted', status: 'Completed' },
-  { id: 'PT-1035', name: 'John Kamau', symptom: 'Nausea or Vomiting', symptomSw: 'Kichefuchefu', places: ['Stomach'], duration: 'Since this morning', urgent: false, time: '1 hour ago', desk: 'Desk 3', lang: 'English', status: 'Completed' },
-  { id: 'PT-1034', name: 'Dorcas Wanjala', symptom: 'Fatigue', symptomSw: 'Uchovu Mkubwa', places: ['Head', 'Lower belly'], duration: 'More than a week', urgent: false, time: '1.5 hours ago', desk: 'Desk 5', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1033', name: 'Geoffrey Rotich', symptom: 'Chest Pain', symptomSw: 'Maumivu ya Kifua', places: ['Chest, left'], duration: 'Less than an hour', urgent: true, time: '2 hours ago', desk: 'Desk 1', lang: 'English', status: 'Completed' },
-  { id: 'PT-1032', name: 'Lydia Nyaboke', symptom: 'Fever or Chills', symptomSw: 'Homa', places: ['Head'], duration: 'A few days', urgent: false, time: '2 hours ago', desk: 'Desk 2', lang: 'Kiswahili & KSL', status: 'Completed' },
-  { id: 'PT-1031', name: 'Erick Odhiambo', symptom: 'Abdominal Pain', symptomSw: 'Maumivu ya Tumbo', places: ['Lower belly'], duration: 'A few days', urgent: false, time: '2.5 hours ago', desk: 'Desk 3', lang: 'English', status: 'Completed' },
-  { id: 'PT-1030', name: 'Priscilla Mutindi', symptom: 'Other Concern', symptomSw: 'Shida Nyingine', places: ['Right arm'], duration: 'Since this morning', urgent: false, time: '3 hours ago', desk: 'Desk 6', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1029', name: 'Paul Kiptoo', symptom: 'Shortness of Breath', symptomSw: 'Pumzi Fupi', places: ['Chest, right'], duration: 'Less than an hour', urgent: true, time: '3 hours ago', desk: 'Desk 1', lang: 'KSL Assisted', status: 'Completed' },
-  { id: 'PT-1028', name: 'Grace Makau', symptom: 'Dizziness', symptomSw: 'Kizunguzungu', places: ['Head'], duration: 'Since this morning', urgent: false, time: '3.5 hours ago', desk: 'Desk 4', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1027', name: 'Victor Wanyama', symptom: 'Headache', symptomSw: 'Kuumwa na Kichwa', places: ['Head'], duration: 'A few days', urgent: false, time: '4 hours ago', desk: 'Desk 2', lang: 'English', status: 'Completed' },
-  { id: 'PT-1026', name: 'Eunice Cherono', symptom: 'Swelling', symptomSw: 'Kuvimba Mwili', places: ['Left arm'], duration: 'More than a week', urgent: false, time: '4 hours ago', desk: 'Desk 3', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1025', name: 'Bernard Maina', symptom: 'Chest Pain', symptomSw: 'Maumivu ya Kifua', places: ['Chest, right'], duration: 'Since this morning', urgent: true, time: '4.5 hours ago', desk: 'Desk 1', lang: 'English', status: 'Completed' },
-  { id: 'PT-1024', name: 'Judith Auma', symptom: 'Fever or Chills', symptomSw: 'Homa', places: ['Head'], duration: 'A few days', urgent: false, time: '5 hours ago', desk: 'Desk 2', lang: 'Kiswahili & KSL', status: 'Completed' },
-  { id: 'PT-1023', name: 'Dennis Gitau', symptom: 'Abdominal Pain', symptomSw: 'Maumivu ya Tumbo', places: ['Stomach'], duration: 'Since this morning', urgent: false, time: '5.5 hours ago', desk: 'Desk 3', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1022', name: 'Sharon Chepkirui', symptom: 'Nausea or Vomiting', symptomSw: 'Kichefuchefu', places: ['Stomach'], duration: 'Less than an hour', urgent: false, time: '6 hours ago', desk: 'Desk 5', lang: 'English', status: 'Completed' },
-  { id: 'PT-1021', name: 'Moses Mwangi', symptom: 'Shortness of Breath', symptomSw: 'Pumzi Fupi', places: ['Throat'], duration: 'Less than an hour', urgent: true, time: '6 hours ago', desk: 'Desk 1', lang: 'KSL Assisted', status: 'Completed' },
-  { id: 'PT-1020', name: 'Esther Nekesa', symptom: 'Headache', symptomSw: 'Kuumwa na Kichwa', places: ['Head'], duration: 'More than a week', urgent: false, time: '6.5 hours ago', desk: 'Desk 4', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1019', name: 'Stephen Ndung’u', symptom: 'Other Concern', symptomSw: 'Shida Nyingine', places: ['Left leg'], duration: 'A few days', urgent: false, time: '7 hours ago', desk: 'Desk 6', lang: 'English', status: 'Completed' },
-  { id: 'PT-1018', name: 'Caroline Moraa', symptom: 'Dizziness', symptomSw: 'Kizunguzungu', places: ['Head'], duration: 'Since this morning', urgent: false, time: '7.5 hours ago', desk: 'Desk 3', lang: 'Kiswahili & KSL', status: 'Completed' },
-  { id: 'PT-1017', name: 'Martin Musyoka', symptom: 'Chest Pain', symptomSw: 'Maumivu ya Kifua', places: ['Chest, left'], duration: 'Less than an hour', urgent: true, time: '8 hours ago', desk: 'Desk 1', lang: 'English', status: 'Completed' },
-  { id: 'PT-1016', name: 'Ann Wambui', symptom: 'Fever or Chills', symptomSw: 'Homa', places: ['Head'], duration: 'A few days', urgent: false, time: '8.5 hours ago', desk: 'Desk 2', lang: 'Kiswahili', status: 'Completed' },
-  { id: 'PT-1015', name: 'Isaac Kipchoge', symptom: 'Swelling', symptomSw: 'Kuvimba Mwili', places: ['Right arm'], duration: 'More than a week', urgent: false, time: '9 hours ago', desk: 'Desk 3', lang: 'English', status: 'Completed' },
-  { id: 'PT-1014', name: 'Rosemary Adongo', symptom: 'Abdominal Pain', symptomSw: 'Maumivu ya Tumbo', places: ['Stomach'], duration: 'A few days', urgent: false, time: '9.5 hours ago', desk: 'Desk 5', lang: 'Kiswahili & KSL', status: 'Completed' },
-  { id: 'PT-1013', name: 'Daniel Korir', symptom: 'Fatigue', symptomSw: 'Uchovu Mkubwa', places: ['Head'], duration: 'More than a week', urgent: false, time: '10 hours ago', desk: 'Desk 4', lang: 'English', status: 'Completed' },
-]
-
 export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: Role }) {
   const [currentRole, setCurrentRole] = useState<Role>(defaultRole)
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem('clearcaption_staff_auth') === 'true'
-  })
+  const [me, setMe] = useState<StaffUser | null>(null)
+  const [authChecking, setAuthChecking] = useState<boolean>(() => Boolean(auth.token))
 
   // Login form state
   const [staffId, setStaffId] = useState(defaultRole === 'admin' ? 'ADMIN-001' : 'NURSE-4029')
   const [pin, setPin] = useState('')
-  const [department, setDepartment] = useState(defaultRole === 'admin' ? 'Executive Medical Operations' : 'Desk 3 · Outpatient Triage & Reception')
+  const [department, setDepartment] = useState(
+    defaultRole === 'admin' ? 'Executive Medical Operations' : 'Desk 3 · Outpatient Triage & Reception',
+  )
   const [loginError, setLoginError] = useState('')
+  const [loginBusy, setLoginBusy] = useState(false)
 
-  // Admin Dashboard Tabs
-  const [adminTab, setAdminTab] = useState<'users' | 'patients' | 'kiosks' | 'compliance'>('users')
+  // Live data from backend
+  const [usersList, setUsersList] = useState<StaffUser[]>([])
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [activePatientDetail, setActivePatientDetail] = useState<Patient | null>(null)
+  const [terminals, setTerminals] = useState<Terminal[]>([])
+  const [interpRequests, setInterpRequests] = useState<InterpreterRequest[]>([])
+  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([])
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [syncError, setSyncError] = useState('')
+
+  // Admin Dashboard Tabs & Filters
+  const [adminTab, setAdminTab] = useState<'users' | 'patients' | 'kiosks' | 'cards' | 'ksl' | 'compliance'>('users')
+  const [symptomCards, setSymptomCards] = useState<SymptomCardItem[]>([])
+  const [kslPrompts, setKslPrompts] = useState<KslPromptItem[]>([])
+  const [newCardModal, setNewCardModal] = useState(false)
+  const [cardForm, setCardForm] = useState({ en: '', sw: '', icon_key: 'heartbeat', keywords: '', urgent: false })
+  const [newKslModal, setNewKslModal] = useState(false)
+  const [kslForm, setKslForm] = useState({ title: '', question_en: '', question_sw: '', ksl_gloss: '', trigger_keywords: '', duration_sec: 5 })
+  const [previewKsl, setPreviewKsl] = useState<KslPromptItem | null>(null)
+  const [catalogToast, setCatalogToast] = useState('')
   const [userSearch, setUserSearch] = useState('')
   const [userRoleFilter, setUserRoleFilter] = useState('All')
-  const [usersList, setUsersList] = useState<StaffUser[]>(HOSPITAL_USERS)
+  const [userStatusFilter, setUserStatusFilter] = useState('All')
+  const [auditEventFilter, setAuditEventFilter] = useState('all')
+
+  // Add Staff Modal
   const [newUserModal, setNewUserModal] = useState(false)
   const [newUserName, setNewUserName] = useState('')
-  const [newUserRole, setNewUserRole] = useState<StaffUser['role']>('Triage Nurse')
+  const [newUserRole, setNewUserRole] = useState<StaffRole>('Triage Nurse')
   const [newUserDept, setNewUserDept] = useState('Desk 3 · Outpatient Reception')
+  const [newUserPhone, setNewUserPhone] = useState('+254 722 100 200')
+  const [newUserPin, setNewUserPin] = useState('')
+  const [credentialBanner, setCredentialBanner] = useState<{ name: string; badgeId: string; pin: string } | null>(null)
 
-  // Patient Registry State
+  // Patient Registry Filters
   const [patientSearch, setPatientSearch] = useState('')
-  const [patientFilter, setPatientFilter] = useState<'all' | 'urgent' | 'waiting'>('all')
+  const [patientFilter, setPatientFilter] = useState<'all' | 'urgent' | 'waiting' | 'active'>('all')
 
   // Nurse Console State
-  const [patients, setPatients] = useState<TriagePatient[]>(() => {
-    const saved = localStorage.getItem('clearcaption_active_visit')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (parsed.name || parsed.symptom) {
-          const livePatient: TriagePatient = {
-            id: 'PT-1043',
-            name: parsed.name || 'Anonymous Patient',
-            symptom: parsed.symptom?.[0] || 'Chest Pain',
-            symptomSw: parsed.symptom?.[1] || 'Maumivu ya Kifua',
-            places: parsed.places || ['Chest, left'],
-            duration: parsed.duration || 'Since this morning',
-            urgent: !!parsed.urgent,
-            time: 'Just now',
-            desk: 'Desk 3',
-            lang: 'Kiswahili & KSL',
-            status: 'Waiting',
-          }
-          return [livePatient, ...PATIENT_RECORDS]
-        }
-      } catch (e) {
-        console.error(e)
-      }
-    }
-    return PATIENT_RECORDS
-  })
-
-  const [activePatientIndex, setActivePatientIndex] = useState(0)
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null)
   const [customPrompt, setCustomPrompt] = useState('')
   const [promptSentToast, setPromptSentToast] = useState('')
-  const [interpreterCalled, setInterpreterCalled] = useState(false)
+  const [actionToast, setActionToast] = useState('')
+  const [micActive, setMicActive] = useState(false)
+  const [micLevel, setMicLevel] = useState(0)
+  const [interimCaption, setInterimCaption] = useState('')
+  const [asrError, setAsrError] = useState('')
+  const [dictateText, setDictateText] = useState('')
+  const [simulateUncertain, setSimulateUncertain] = useState(false)
+  const [editingTurnId, setEditingTurnId] = useState<number | null>(null)
+  const [editingTurnText, setEditingTurnText] = useState('')
+  const [diagInput, setDiagInput] = useState('')
+  const [rxInput, setRxInput] = useState('')
+  const [wardInput, setWardInput] = useState('Cardiac Observation Ward B · Bed 4')
 
-  const activePatient = patients[activePatientIndex] || patients[0]
+  const speechCtrlRef = useRef<SpeechCaptureController | null>(null)
+  const nurseWsRef = useRef<WebSocket | null>(null)
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    setCurrentRole(defaultRole)
+    if (!auth.token) {
+      setStaffId(defaultRole === 'admin' ? 'ADMIN-001' : 'NURSE-4029')
+      setDepartment(defaultRole === 'admin' ? 'Executive Medical Operations' : 'Desk 3 · Outpatient Triage & Reception')
+    }
+  }, [defaultRole])
+
+  // Restore session if token exists
+  useEffect(() => {
+    if (!auth.token) {
+      setAuthChecking(false)
+      return
+    }
+    api
+      .me()
+      .then((res) => {
+        setMe(res.user)
+        if (defaultRole === 'admin' && res.user.role === 'Hospital Administrator') {
+          setCurrentRole('admin')
+        } else if (res.user.role === 'Hospital Administrator' && window.location.hash.startsWith('#/admin')) {
+          setCurrentRole('admin')
+        } else {
+          setCurrentRole(defaultRole)
+        }
+      })
+      .catch(() => {
+        auth.clear()
+        setMe(null)
+      })
+      .finally(() => setAuthChecking(false))
+  }, [defaultRole])
+
+  useEffect(() => {
+    const onUnauth = () => setMe(null)
+    window.addEventListener('clearcaption:unauthorized', onUnauth)
+    return () => window.removeEventListener('clearcaption:unauthorized', onUnauth)
+  }, [])
+
+  const loadAll = useCallback(async () => {
+    if (!auth.token) return
+    try {
+      const [uList, pList, tList, iList, aList, sData, cardsRes, kslRes] = await Promise.all([
+        api.users(),
+        api.patients(),
+        api.terminals(),
+        api.interpreterRequests(true),
+        api.auditLogs(auditEventFilter === 'all' ? undefined : auditEventFilter),
+        api.stats(),
+        catalogApi.listSymptomCards(true),
+        catalogApi.listKslPrompts(true),
+      ])
+      setUsersList(uList)
+      setPatients(pList)
+      setTerminals(tList)
+      setInterpRequests(iList)
+      setAuditLogs(aList)
+      setStats(sData)
+      setSymptomCards(cardsRes.items)
+      setKslPrompts(kslRes.items)
+      setSyncError('')
+      setSelectedPatientId((prev) => {
+        if (prev && pList.some((p) => p.id === prev)) return prev
+        return pList[0]?.id ?? null
+      })
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to synchronize with hospital server')
+    }
+  }, [auditEventFilter])
+
+  // Poll live hospital state while signed in
+  useEffect(() => {
+    if (!me) return
+    loadAll()
+    const id = setInterval(loadAll, 3500)
+    return () => clearInterval(id)
+  }, [me, loadAll])
+
+  // Load full transcript for currently selected patient
+  const activePatient = patients.find((p) => p.id === selectedPatientId) ?? patients[0] ?? null
+  useEffect(() => {
+    if (!me || !activePatient?.id) {
+      setActivePatientDetail(null)
+      return
+    }
+    let alive = true
+    const fetchDetail = () => {
+      api
+        .patient(activePatient.id)
+        .then((d) => {
+          if (alive) setActivePatientDetail(d)
+        })
+        .catch(() => {})
+    }
+    fetchDetail()
+    const id = setInterval(fetchDetail, 3000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [me, activePatient?.id])
+
+  // Real-time WebSocket connection for the active patient's desk terminal
+  const activeTerminalId = activePatient?.terminalId || 'KIOSK-03'
+  useEffect(() => {
+    if (!me) return
+    let ws: WebSocket | null = null
+    let closed = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+
+    const connect = () => {
+      if (closed) return
+      try {
+        ws = new WebSocket(terminalWsUrl(activeTerminalId))
+        nurseWsRef.current = ws
+        ws.onmessage = (ev) => {
+          try {
+            const msg = JSON.parse(ev.data)
+            if (msg?.type === 'turn_added' || msg?.type === 'turn_edited' || msg?.type === 'session_ended') {
+              if (activePatient?.id) {
+                api.patient(activePatient.id).then(setActivePatientDetail).catch(() => undefined)
+              }
+              loadAll()
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        ws.onclose = () => {
+          if (nurseWsRef.current === ws) nurseWsRef.current = null
+          if (!closed) retryTimer = setTimeout(connect, 2500)
+        }
+      } catch {
+        if (!closed) retryTimer = setTimeout(connect, 3000)
+      }
+    }
+
+    connect()
+    return () => {
+      closed = true
+      if (retryTimer) clearTimeout(retryTimer)
+      ws?.close()
+      if (nurseWsRef.current === ws) nurseWsRef.current = null
+    }
+  }, [me, activeTerminalId, activePatient?.id, loadAll])
+
+  // Cleanup microphone on unmount
+  useEffect(() => () => speechCtrlRef.current?.stop(), [])
+
+  const sendWsEvent = (payload: Record<string, unknown>) => {
+    if (nurseWsRef.current?.readyState === WebSocket.OPEN) {
+      nurseWsRef.current.send(JSON.stringify(payload))
+    }
+  }
+
+  const submitSpokenCaption = async (rawText: string, confidence: number) => {
+    if (!activePatient) return
+    const cleaned = applyClinicalVocabulary(rawText)
+    if (!cleaned) return
+    const isUncertain = confidence < 0.78
+    sendWsEvent({ type: 'live_caption', text: cleaned, interim: false, confidence, isUncertain })
+    try {
+      await api.addClinicianTurn(activePatient.id, { text: cleaned, confidence, is_uncertain: isUncertain, channel: 'spoken' })
+      const d = await api.patient(activePatient.id)
+      setActivePatientDetail(d)
+    } catch {
+      /* fallback handled on next poll */
+    }
+  }
+
+  const handleToggleMic = async () => {
+    if (micActive) {
+      speechCtrlRef.current?.stop()
+      speechCtrlRef.current = null
+      setMicActive(false)
+      setInterimCaption('')
+      sendWsEvent({ type: 'mic_status', status: 'paused' })
+      return
+    }
+    setAsrError('')
+    setMicActive(true)
+    sendWsEvent({ type: 'mic_status', status: 'listening' })
+    const ctrl = await startSpeechCapture({
+      lang: activePatient?.lang?.toLowerCase().includes('kiswahili') ? 'sw-KE' : 'en-KE',
+      onInterim: (text) => {
+        setInterimCaption(text)
+        sendWsEvent({ type: 'live_caption', text, interim: true })
+      },
+      onFinal: (text, confidence) => {
+        setInterimCaption('')
+        submitSpokenCaption(text, confidence)
+      },
+      onLevel: (lvl) => setMicLevel(lvl),
+      onError: (msg) => setAsrError(msg),
+      onEnd: () => {
+        setMicActive(false)
+        setMicLevel(0)
+        sendWsEvent({ type: 'mic_status', status: 'paused' })
+      },
+    })
+    speechCtrlRef.current = ctrl
+    if (!ctrl.supported) {
+      setAsrError('Web Speech API is unavailable in this browser; use the Spoken Caption box below to stream live captions.')
+    }
+  }
+
+  const handleSaveTurnEdit = async (turnId: number) => {
+    if (!activePatient || !editingTurnText.trim()) return
+    try {
+      await api.editTurn(activePatient.id, turnId, editingTurnText.trim())
+      setEditingTurnId(null)
+      setEditingTurnText('')
+      const d = await api.patient(activePatient.id)
+      setActivePatientDetail(d)
+      setActionToast('Caption updated & synced to patient display')
+      setTimeout(() => setActionToast(''), 3000)
+    } catch (err) {
+      setActionToast(err instanceof Error ? err.message : 'Failed to update caption')
+    }
+  }
+
+  const handleRepeatLastCaption = async () => {
+    if (!activePatient) return
+    try {
+      const res = await api.repeatCaption(activePatient.id)
+      sendWsEvent({ type: 'repeat_caption', text: res.text, turn: res.turn })
+      setActionToast(`Repeated caption on ${activePatient.desk}`)
+      setTimeout(() => setActionToast(''), 3000)
+    } catch (err) {
+      setActionToast(err instanceof Error ? err.message : 'No nurse caption to repeat')
+    }
+  }
+
+  const handleEndSession = async () => {
+    if (!activePatient) return
+    try {
+      const res = await api.endSession(activePatient.id)
+      if (micActive) {
+        speechCtrlRef.current?.stop()
+        speechCtrlRef.current = null
+        setMicActive(false)
+      }
+      setActionToast(
+        res.purged
+          ? 'Session ended — unconsented transcripts purged per DPA 2019'
+          : `Session ended & triage summary finalized for ${activePatient.name}`,
+      )
+      setTimeout(() => setActionToast(''), 4000)
+      await loadAll()
+    } catch (err) {
+      setActionToast(err instanceof Error ? err.message : 'Unable to end session')
+    }
+  }
+
+  const handleDisposition = async (action: 'pharmacy' | 'discharged' | 'admitted') => {
+    if (!activePatient) return
+    try {
+      const updated = await api.setDisposition(activePatient.id, {
+        action,
+        diagnosis: diagInput.trim() || undefined,
+        prescription: rxInput.trim() || undefined,
+        ward: action === 'admitted' ? wardInput.trim() || 'General Medical Ward 2' : undefined,
+      })
+      setActivePatientDetail(updated)
+      setActionToast(
+        action === 'pharmacy'
+          ? `Prescription sent to Pharmacy & patient kiosk for ${activePatient.name}`
+          : action === 'discharged'
+          ? `${activePatient.name} dispensed medicine & discharged`
+          : `${activePatient.name} admitted to ${updated.ward || wardInput}`,
+      )
+      setTimeout(() => setActionToast(''), 4000)
+      await loadAll()
+    } catch (err) {
+      setActionToast(err instanceof Error ? err.message : 'Failed to record clinical outcome')
+    }
+  }
+
+  const handleCreateSymptomCard = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Accept demo PINs: 4821 (nurse), 9900 (admin), or any 4 digits
-    if (pin.trim() === '4821' || pin.trim() === '9900' || pin.trim().length === 4) {
-      setIsAuthenticated(true)
-      sessionStorage.setItem('clearcaption_staff_auth', 'true')
-      if (staffId.startsWith('ADMIN') || pin.trim() === '9900' || currentRole === 'admin') {
+    try {
+      const kws = cardForm.keywords.split(',').map((s) => s.trim()).filter(Boolean)
+      await catalogApi.createSymptomCard({
+        en: cardForm.en,
+        sw: cardForm.sw,
+        icon_key: cardForm.icon_key,
+        keywords: kws,
+        urgent: cardForm.urgent,
+      })
+      setNewCardModal(false)
+      setCardForm({ en: '', sw: '', icon_key: 'heartbeat', keywords: '', urgent: false })
+      setCatalogToast('Symptom card added to kiosk catalog')
+      setTimeout(() => setCatalogToast(''), 3000)
+      await loadAll()
+    } catch (err) {
+      setCatalogToast(err instanceof Error ? err.message : 'Failed to create symptom card')
+    }
+  }
+
+  const handleCreateKslPrompt = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const kws = kslForm.trigger_keywords.split(',').map((s) => s.trim()).filter(Boolean)
+      await catalogApi.createKslPrompt({
+        title: kslForm.title,
+        question_en: kslForm.question_en,
+        question_sw: kslForm.question_sw,
+        ksl_gloss: kslForm.ksl_gloss,
+        trigger_keywords: kws,
+        duration_sec: kslForm.duration_sec,
+      })
+      setNewKslModal(false)
+      setKslForm({ title: '', question_en: '', question_sw: '', ksl_gloss: '', trigger_keywords: '', duration_sec: 5 })
+      setCatalogToast('KSL video prompt added to catalog')
+      setTimeout(() => setCatalogToast(''), 3000)
+      await loadAll()
+    } catch (err) {
+      setCatalogToast(err instanceof Error ? err.message : 'Failed to create KSL prompt')
+    }
+  }
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoginError('')
+    setLoginBusy(true)
+    try {
+      const res = await api.login(staffId.trim(), pin.trim())
+      auth.set(res.token)
+      setMe(res.user)
+      setPin('')
+      if (res.portal === 'admin') {
         setCurrentRole('admin')
       } else {
         setCurrentRole('nurse')
       }
-      setLoginError('')
-    } else {
-      setLoginError('Invalid PIN. Use demo Nurse PIN 4821 or Admin PIN 9900')
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'Unable to sign in')
+    } finally {
+      setLoginBusy(false)
     }
   }
 
@@ -186,6 +460,7 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
     setStaffId('NURSE-4029')
     setPin('4821')
     setDepartment('Desk 3 · Outpatient Triage & Reception')
+    setLoginError('')
   }
 
   const handleQuickAdminFill = () => {
@@ -193,61 +468,173 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
     setStaffId('ADMIN-001')
     setPin('9900')
     setDepartment('Executive Medical Operations')
+    setLoginError('')
   }
 
-  const handleLogout = () => {
-    setIsAuthenticated(false)
-    sessionStorage.removeItem('clearcaption_staff_auth')
+  const handleLogout = async () => {
+    try {
+      await api.logout()
+    } catch {
+      /* ignore */
+    }
+    auth.clear()
+    setMe(null)
   }
 
-  const handleSendPrompt = (text: string) => {
-    setPromptSentToast(`Sent to Desk 3 Screen: "${text}"`)
-    setTimeout(() => setPromptSentToast(''), 4000)
-    setCustomPrompt('')
+  const handleMyStatusChange = async (status: StaffStatus) => {
+    try {
+      const updated = await api.setMyStatus(status)
+      setMe(updated)
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Could not update status')
+    }
   }
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleSendPrompt = async (text: string) => {
+    if (!activePatient) return
+    const termId =
+      activePatient.terminalId ||
+      terminals.find((t) => t.desk === activePatient.desk)?.id ||
+      'TERM-03'
+    try {
+      await api.sendDeskMessage(termId, text, activePatient.id)
+      setPromptSentToast(`Delivered to ${activePatient.desk} Tablet (${termId}): "${text}"`)
+      setCustomPrompt('')
+      const d = await api.patient(activePatient.id)
+      setActivePatientDetail(d)
+      loadAll()
+      setTimeout(() => setPromptSentToast(''), 4000)
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to send message to tablet')
+    }
+  }
+
+  const handlePatientStatusChange = async (patientId: string, status: PatientStatus) => {
+    try {
+      const updated = await api.setPatientStatus(patientId, status)
+      setPatients((prev) => prev.map((p) => (p.id === patientId ? updated : p)))
+      setActionToast(`Updated ${updated.name} to "${status}"`)
+      setTimeout(() => setActionToast(''), 3000)
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to update patient status')
+    }
+  }
+
+  const handleAssignToMe = async (patientId: string) => {
+    try {
+      const updated = await api.assignToMe(patientId)
+      setPatients((prev) => prev.map((p) => (p.id === patientId ? updated : p)))
+      setActionToast(`Assigned ${updated.name} to ${me?.name}`)
+      setTimeout(() => setActionToast(''), 3000)
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to assign patient')
+    }
+  }
+
+  const handleRequestInterpreterForActive = async () => {
+    if (!activePatient) return
+    try {
+      await api.requestInterpreter(activePatient.desk, activePatient.id)
+      setActionToast(`Requested KSL interpreter for ${activePatient.desk}`)
+      setTimeout(() => setActionToast(''), 3500)
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to request interpreter')
+    }
+  }
+
+  const handleInterpreterStatus = async (reqId: number, status: InterpreterRequest['status']) => {
+    try {
+      await api.updateInterpreter(reqId, status)
+      setActionToast(`Interpreter request #${reqId} marked ${status}`)
+      setTimeout(() => setActionToast(''), 3500)
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to update interpreter request')
+    }
+  }
+
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newUserName.trim()) return
-    const id = `USR-${usersList.length + 1}`
-    const badge = newUserRole === 'Hospital Administrator' ? `ADMIN-00${usersList.length + 1}` : `STAFF-${4000 + usersList.length}`
-    const created: StaffUser = {
-      id,
-      name: newUserName,
-      role: newUserRole,
-      department: newUserDept,
-      email: `${newUserName.toLowerCase().replace(/\s+/g, '.')}@knh.or.ke`,
-      phone: '+254 722 ' + Math.floor(100000 + Math.random() * 900000),
-      status: 'On-Duty',
-      lastLogin: 'Just registered',
-      badgeId: badge,
+    try {
+      const res = await api.createUser({
+        name: newUserName.trim(),
+        role: newUserRole,
+        department: newUserDept.trim(),
+        phone: newUserPhone.trim(),
+        pin: newUserPin.trim() || undefined,
+      })
+      setCredentialBanner({ name: res.user.name, badgeId: res.user.badgeId, pin: res.pin })
+      setNewUserName('')
+      setNewUserPin('')
+      setNewUserModal(false)
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to register staff member')
     }
-    setUsersList([created, ...usersList])
-    setNewUserName('')
-    setNewUserModal(false)
   }
 
-  // Filtered staff users
+  const handleUserUpdate = async (userId: string, patch: Parameters<typeof api.updateUser>[1]) => {
+    try {
+      const updated = await api.updateUser(userId, patch)
+      setUsersList((prev) => prev.map((u) => (u.id === userId ? updated : u)))
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to update staff record')
+    }
+  }
+
+  const handleResetPin = async (userId: string) => {
+    try {
+      const res = await api.resetPin(userId)
+      setCredentialBanner({ name: res.user.name, badgeId: res.user.badgeId, pin: res.pin })
+      loadAll()
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : 'Failed to reset PIN')
+    }
+  }
+
   const filteredUsers = usersList.filter((u) => {
-    const matchesSearch = u.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-      u.badgeId.toLowerCase().includes(userSearch.toLowerCase()) ||
-      u.department.toLowerCase().includes(userSearch.toLowerCase())
+    const q = userSearch.toLowerCase()
+    const matchesSearch =
+      u.name.toLowerCase().includes(q) ||
+      u.badgeId.toLowerCase().includes(q) ||
+      u.department.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q)
     const matchesRole = userRoleFilter === 'All' || u.role === userRoleFilter
-    return matchesSearch && matchesRole
+    const matchesStatus = userStatusFilter === 'All' || u.status === userStatusFilter
+    return matchesSearch && matchesRole && matchesStatus
   })
 
-  // Filtered patients for registry
   const filteredPatients = patients.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(patientSearch.toLowerCase()) ||
-      p.symptom.toLowerCase().includes(patientSearch.toLowerCase()) ||
-      p.desk.toLowerCase().includes(patientSearch.toLowerCase())
+    const q = patientSearch.toLowerCase()
+    const matchesSearch =
+      p.name.toLowerCase().includes(q) ||
+      (p.symptom ?? '').toLowerCase().includes(q) ||
+      p.desk.toLowerCase().includes(q) ||
+      p.id.toLowerCase().includes(q)
     if (patientFilter === 'urgent') return matchesSearch && p.urgent
     if (patientFilter === 'waiting') return matchesSearch && p.status === 'Waiting'
+    if (patientFilter === 'active') return matchesSearch && p.status !== 'Completed'
     return matchesSearch
   })
 
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-canvas text-navy font-ui grid place-items-center">
+        <div className="flex items-center gap-3 text-[16px] font-semibold text-slate">
+          <ArrowsClockwise size={22} className="animate-spin text-accent" /> Restoring Hospital Session...
+        </div>
+      </div>
+    )
+  }
+
   /* ---------- Login View ---------- */
-  if (!isAuthenticated) {
+  if (!me) {
     return (
       <div className="min-h-screen bg-canvas text-navy font-ui flex flex-col justify-between p-4 md:p-8">
         <div className="max-w-[1240px] w-full mx-auto flex items-center justify-between">
@@ -267,11 +654,10 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
             </span>
             <div>
               <h1 className="text-[26px] font-display font-bold tracking-tight">Hospital Access Portal</h1>
-              <p className="text-[14px] text-slate mt-1">Sign in as Triage Clinician or Hospital Administrator</p>
+              <p className="text-[14px] text-slate mt-1">Sign in with your Hospital Badge ID and PIN</p>
             </div>
           </div>
 
-          {/* Role selector tabs */}
           <div className="grid grid-cols-2 p-1.5 rounded-full bg-canvas border border-line mb-6">
             <button
               type="button"
@@ -330,7 +716,7 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                   onClick={currentRole === 'admin' ? handleQuickAdminFill : handleQuickNurseFill}
                   className="text-[12px] text-accent font-semibold hover:underline"
                 >
-                  Fill Demo {currentRole === 'admin' ? 'Admin PIN (9900)' : 'Nurse PIN (4821)'}
+                  Fill Demo {currentRole === 'admin' ? 'Admin (ADMIN-001 / 9900)' : 'Nurse (NURSE-4029 / 4821)'}
                 </button>
               </div>
               <input
@@ -353,32 +739,44 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
 
             <button
               type="submit"
-              className="mt-2 w-full h-13 rounded-full bg-accent hover:bg-brand text-canvas font-semibold text-[16px] flex items-center justify-center gap-2 transition-colors shadow-sm"
+              disabled={loginBusy}
+              className="mt-2 w-full h-13 rounded-full bg-accent hover:bg-brand disabled:opacity-50 text-canvas font-semibold text-[16px] flex items-center justify-center gap-2 transition-colors shadow-sm"
             >
-              Sign In as {currentRole === 'admin' ? 'Administrator' : 'Clinician'}
+              {loginBusy ? 'Verifying Credentials...' : `Sign In as ${currentRole === 'admin' ? 'Administrator' : 'Clinician'}`}
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-line text-center">
-            <p className="text-[12px] text-slate flex items-center justify-center gap-1.5">
+          <div className="mt-6 pt-5 border-t border-line text-[12px] text-slate space-y-1.5">
+            <div className="flex items-center justify-center gap-1.5 font-semibold text-navy">
               <ShieldCheck size={16} className="text-brand" />
-              Confidential Patient Health System · DPA & HIPAA Compliant
+              50 Registered Hospital Staff Accounts
+            </div>
+            <p className="text-center text-[11px]">
+              Admins (`ADMIN-001..004`): PIN <code className="font-mono font-bold">9900</code> · Nurses (`NURSE-4029..4042`): PIN <code className="font-mono font-bold">4821</code> · Doctors / KSL / Reception: PIN <code className="font-mono font-bold">1234</code>
             </p>
           </div>
         </div>
 
         <div className="text-center text-[12px] text-slate pb-4">
-          © 2026 ClearCaption Hospital Systems · 30 Active Hospital Staff & Clinicians
+          © 2026 ClearCaption Hospital Systems · 50 Active Hospital Staff & Clinicians
         </div>
       </div>
     )
   }
 
+  const isAdminUser = me.role === 'Hospital Administrator'
+  const initials = me.name
+    .replace(/^(Dr\.|Nurse)\s+/i, '')
+    .split(' ')
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+
   /* ---------- Logged-in Header & Navigation ---------- */
   return (
     <div className="min-h-screen bg-canvas text-navy font-ui flex flex-col">
-      {/* Top Console Navigation */}
-      <header className="h-18 px-6 md:px-10 bg-ash/80 backdrop-blur-md border-b border-line flex items-center justify-between">
+      <header className="h-18 px-6 md:px-10 bg-ash/80 backdrop-blur-md border-b border-line flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <a
             href="#/"
@@ -394,13 +792,13 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
               </svg>
             </span>
             ClearCaption{' '}
-            <span className="text-[14px] font-normal text-slate">
+            <span className="hidden lg:inline text-[14px] font-normal text-slate">
               | {currentRole === 'admin' ? 'Hospital Administration Suite' : 'Clinician Triage Console'}
             </span>
           </div>
         </div>
 
-        {/* Center Role Toggle for Pair Review */}
+        {/* Center Role Toggle */}
         <div className="hidden md:flex items-center p-1 rounded-full bg-canvas border border-line text-[13px]">
           <button
             onClick={() => setCurrentRole('nurse')}
@@ -408,29 +806,45 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
               currentRole === 'nurse' ? 'bg-navy text-canvas' : 'text-slate hover:text-navy'
             }`}
           >
-            <Stethoscope size={15} /> Nurse View
+            <Stethoscope size={15} /> Nurse Console ({patients.filter((p) => p.status !== 'Completed').length} Active)
           </button>
           <button
-            onClick={() => setCurrentRole('admin')}
+            onClick={() => {
+              if (!isAdminUser) {
+                setSyncError('Only Hospital Administrators (e.g. ADMIN-001, PIN 9900) can modify staff accounts.')
+              }
+              setCurrentRole('admin')
+            }}
             className={`h-8 px-4 rounded-full font-bold transition-colors flex items-center gap-1.5 ${
               currentRole === 'admin' ? 'bg-navy text-canvas' : 'text-slate hover:text-navy'
             }`}
           >
-            <ShieldCheck size={15} /> Admin View ({usersList.length} Staff)
+            <ShieldCheck size={15} /> Admin Suite ({stats?.staffTotal ?? usersList.length} Staff)
           </button>
         </div>
 
         <div className="flex items-center gap-3">
+          <select
+            aria-label="Your Duty Status"
+            value={me.status}
+            onChange={(e) => handleMyStatusChange(e.target.value as StaffStatus)}
+            className="hidden sm:block h-9 px-3 rounded-full bg-canvas border border-line text-[12px] font-bold text-brand outline-none"
+          >
+            {STAFF_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+
           <div className="flex items-center gap-2 text-right">
             <span className="w-8 h-8 rounded-full bg-accent text-canvas grid place-items-center font-bold text-[12px]">
-              {currentRole === 'admin' ? 'GM' : 'JM'}
+              {initials}
             </span>
             <div className="hidden sm:flex flex-col text-left">
-              <span className="text-[13px] font-semibold leading-tight">
-                {currentRole === 'admin' ? 'Dr. Geoffrey Mutiso' : 'Nurse Joyce Mwangi'}
-              </span>
+              <span className="text-[13px] font-semibold leading-tight">{me.name}</span>
               <span className="text-[11px] text-slate">
-                {currentRole === 'admin' ? 'Hospital Director' : 'Desk 3 Triage'}
+                {me.badgeId} · {me.role}
               </span>
             </div>
           </div>
@@ -444,6 +858,34 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
         </div>
       </header>
 
+      {syncError && (
+        <div className="max-w-[1340px] w-full mx-auto mt-4 px-6">
+          <div className="p-3 rounded-[12px] bg-alert/10 border border-alert/30 text-alert text-[13px] flex items-center justify-between">
+            <span className="flex items-center gap-2"><Warning size={18} /> {syncError}</span>
+            <button onClick={() => setSyncError('')} className="text-xs font-bold underline">Dismiss</button>
+          </div>
+        </div>
+      )}
+
+      {credentialBanner && (
+        <div className="max-w-[1340px] w-full mx-auto mt-4 px-6">
+          <div className="p-4 rounded-[16px] bg-mint border border-brand/30 text-navy flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 text-[14px]">
+              <Key size={22} className="text-brand shrink-0" />
+              <div>
+                <strong>Credentials issued for {credentialBanner.name}:</strong> Badge ID{' '}
+                <code className="px-2 py-0.5 rounded bg-canvas font-mono font-bold text-brand">{credentialBanner.badgeId}</code>{' '}
+                · Access PIN{' '}
+                <code className="px-2 py-0.5 rounded bg-canvas font-mono font-bold text-navy">{credentialBanner.pin}</code>
+              </div>
+            </div>
+            <button onClick={() => setCredentialBanner(null)} className="text-slate hover:text-navy">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ---------- ADMIN VIEW ---------- */}
       {currentRole === 'admin' ? (
         <main className="flex-1 max-w-[1340px] w-full mx-auto p-4 md:p-8 flex flex-col gap-6">
@@ -454,9 +896,11 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                 <Users size={16} className="text-accent" /> Hospital Users & Staff
               </span>
               <span className="text-[32px] font-display font-bold text-navy leading-none mt-1">
-                {usersList.length}
+                {stats?.staffTotal ?? usersList.length}
               </span>
-              <span className="text-[12px] text-slate">30 active staff profiles</span>
+              <span className="text-[12px] text-slate">
+                {stats?.staffOnDuty ?? usersList.filter((u) => u.status === 'On-Duty' || u.status === 'Active').length} currently on duty
+              </span>
             </div>
 
             <div className="p-5 rounded-[20px] bg-ash/60 border border-line flex flex-col gap-1">
@@ -464,44 +908,52 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                 <Desktop size={16} className="text-brand" /> Kiosk Fleet Desks
               </span>
               <span className="text-[32px] font-display font-bold text-navy leading-none mt-1">
-                6 / 6
+                {terminals.length || 6} Desks
               </span>
-              <span className="text-[12px] text-mint font-semibold text-brand">100% Online & Synced</span>
+              <span className="text-[12px] font-semibold text-brand">
+                {stats?.kiosksOnline ?? terminals.filter((t) => t.online).length} live heartbeats · All 6 configured
+              </span>
             </div>
 
             <div className="p-5 rounded-[20px] bg-ash/60 border border-line flex flex-col gap-1">
               <span className="text-[12px] uppercase font-bold tracking-wider text-slate flex items-center gap-1.5">
-                <Heartbeat size={16} className="text-alert" /> Captioned Intakes Today
+                <Heartbeat size={16} className="text-alert" /> Patient Intakes
               </span>
               <span className="text-[32px] font-display font-bold text-navy leading-none mt-1">
                 {patients.length}
               </span>
-              <span className="text-[12px] text-slate">Average 2.4 min intake time</span>
+              <span className="text-[12px] text-slate">
+                {stats?.urgentOpen ?? patients.filter((p) => p.urgent && p.status !== 'Completed').length} urgent open · {stats?.interpreterOpen ?? interpRequests.length} KSL requests
+              </span>
             </div>
 
             <div className="p-5 rounded-[20px] bg-ash/60 border border-line flex flex-col gap-1">
               <span className="text-[12px] uppercase font-bold tracking-wider text-slate flex items-center gap-1.5">
-                <ShieldCheck size={16} className="text-accent" /> DPA Privacy Wipes
+                <ShieldCheck size={16} className="text-accent" /> DPA Audit & Wipes
               </span>
               <span className="text-[32px] font-display font-bold text-navy leading-none mt-1">
-                100%
+                {auditLogs.length}
               </span>
-              <span className="text-[12px] text-brand font-semibold">Zero persistent records</span>
+              <span className="text-[12px] text-brand font-semibold">
+                {stats?.screenWipes24h ?? 0} tablet wipes in last 24h
+              </span>
             </div>
           </div>
 
           {/* Admin Navigation Tabs */}
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {[
                 { id: 'users', label: `Hospital Staff (${usersList.length})`, icon: Users },
                 { id: 'patients', label: `Patient Intake Registry (${patients.length})`, icon: Heartbeat },
-                { id: 'kiosks', label: 'Reception Desks Fleet (6)', icon: Desktop },
-                { id: 'compliance', label: 'Privacy & DPA Logs', icon: ShieldCheck },
+                { id: 'kiosks', label: `Reception Desks Fleet (${terminals.length})`, icon: Desktop },
+                { id: 'cards', label: `Symptom Cards (${symptomCards.length})`, icon: FirstAidKit },
+                { id: 'ksl', label: `KSL Videos (${kslPrompts.length})`, icon: VideoCamera },
+                { id: 'compliance', label: `Privacy & DPA Logs (${auditLogs.length})`, icon: ShieldCheck },
               ].map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => setAdminTab(t.id as any)}
+                  onClick={() => setAdminTab(t.id as typeof adminTab)}
                   className={`h-10 px-4 rounded-full font-bold text-[14px] flex items-center gap-2 transition-colors ${
                     adminTab === t.id
                       ? 'bg-navy text-canvas shadow-sm'
@@ -513,7 +965,7 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
               ))}
             </div>
 
-            {adminTab === 'users' && (
+            {adminTab === 'users' && isAdminUser && (
               <button
                 onClick={() => setNewUserModal(true)}
                 className="h-10 px-4 rounded-full bg-accent hover:bg-brand text-canvas font-semibold text-[13px] flex items-center gap-1.5 transition-colors shadow-sm"
@@ -521,42 +973,70 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                 <UserPlus size={16} /> Add Hospital Staff
               </button>
             )}
+            {adminTab === 'cards' && isAdminUser && (
+              <button
+                onClick={() => setNewCardModal(true)}
+                className="h-10 px-4 rounded-full bg-accent hover:bg-brand text-canvas font-semibold text-[13px] flex items-center gap-1.5 transition-colors shadow-sm"
+              >
+                <Plus size={16} /> Add Symptom Card
+              </button>
+            )}
+            {adminTab === 'ksl' && isAdminUser && (
+              <button
+                onClick={() => setNewKslModal(true)}
+                className="h-10 px-4 rounded-full bg-accent hover:bg-brand text-canvas font-semibold text-[13px] flex items-center gap-1.5 transition-colors shadow-sm"
+              >
+                <Plus size={16} /> Add KSL Video Prompt
+              </button>
+            )}
           </div>
 
-          {/* Tab 1: 30 Hospital Users & Staff Directory */}
+          {/* Tab 1: 50 Hospital Users & Staff Directory */}
           {adminTab === 'users' && (
             <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="relative w-full sm:w-[360px]">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                <div className="relative w-full md:w-[360px]">
                   <MagnifyingGlass size={18} className="absolute left-3.5 top-3 text-slate" />
                   <input
                     type="text"
                     value={userSearch}
                     onChange={(e) => setUserSearch(e.target.value)}
-                    placeholder="Search staff by name, badge, department..."
+                    placeholder="Search 50 staff by name, badge, department, email..."
                     className="w-full h-10 pl-10 pr-4 rounded-full bg-canvas border border-line text-[14px] text-navy outline-none focus:border-accent"
                   />
                 </div>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <span className="text-[13px] text-slate font-medium">Filter Role:</span>
+                <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                  <span className="text-[13px] text-slate font-medium">Role:</span>
                   <select
                     value={userRoleFilter}
                     onChange={(e) => setUserRoleFilter(e.target.value)}
                     className="h-10 px-3 rounded-[12px] bg-canvas border border-line text-[13px] font-semibold text-navy outline-none"
                   >
-                    <option value="All">All Roles (30)</option>
-                    <option value="Hospital Administrator">Hospital Administrator</option>
-                    <option value="Triage Nurse">Triage Nurse</option>
-                    <option value="Reception Officer">Reception Officer</option>
-                    <option value="Medical Doctor">Medical Doctor</option>
-                    <option value="KSL Interpreter">KSL Interpreter</option>
-                    <option value="Audiology Specialist">Audiology Specialist</option>
+                    <option value="All">All Roles ({usersList.length})</option>
+                    {ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {r} ({usersList.filter((u) => u.role === r).length})
+                      </option>
+                    ))}
+                  </select>
+
+                  <span className="text-[13px] text-slate font-medium ml-2">Status:</span>
+                  <select
+                    value={userStatusFilter}
+                    onChange={(e) => setUserStatusFilter(e.target.value)}
+                    className="h-10 px-3 rounded-[12px] bg-canvas border border-line text-[13px] font-semibold text-navy outline-none"
+                  >
+                    <option value="All">All Statuses</option>
+                    {STAFF_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Staff Table */}
               <div className="rounded-[18px] bg-canvas border border-line overflow-x-auto">
                 <table className="w-full text-left text-[14px]">
                   <thead className="bg-ash/80 border-b border-line text-[12px] uppercase font-bold text-slate tracking-wider">
@@ -566,22 +1046,37 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                       <th className="py-3.5 px-4">Assigned Role</th>
                       <th className="py-3.5 px-4">Department / Clinic</th>
                       <th className="py-3.5 px-4">Contact</th>
-                      <th className="py-3.5 px-4">Status</th>
-                      <th className="py-3.5 px-4">Last Active</th>
+                      <th className="py-3.5 px-4">Duty Status</th>
+                      <th className="py-3.5 px-4">Last Login</th>
+                      {isAdminUser && <th className="py-3.5 px-4 text-right">Admin Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
                     {filteredUsers.map((u) => (
-                      <tr key={u.id} className="hover:bg-ash/40 transition-colors">
+                      <tr key={u.id} className={`hover:bg-ash/40 transition-colors ${!u.isActive ? 'opacity-50' : ''}`}>
                         <td className="py-3 px-4 font-mono font-bold text-[12px] text-brand">{u.badgeId}</td>
-                        <td className="py-3 px-4 font-bold text-navy">{u.name}</td>
+                        <td className="py-3 px-4 font-bold text-navy">
+                          {u.name}
+                          {!u.isActive && (
+                            <span className="ml-2 px-2 py-0.5 rounded bg-alert/15 text-alert text-[10px] font-bold">
+                              DISABLED
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 px-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                            u.role === 'Hospital Administrator' ? 'bg-navy text-canvas' :
-                            u.role === 'Triage Nurse' ? 'bg-mint text-brand' :
-                            u.role === 'KSL Interpreter' ? 'bg-amber/15 text-amber' :
-                            u.role === 'Medical Doctor' ? 'bg-sky text-navy' : 'bg-ash text-slate'
-                          }`}>
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                              u.role === 'Hospital Administrator'
+                                ? 'bg-navy text-canvas'
+                                : u.role === 'Triage Nurse'
+                                ? 'bg-mint text-brand'
+                                : u.role === 'KSL Interpreter'
+                                ? 'bg-amber/15 text-amber'
+                                : u.role === 'Medical Doctor'
+                                ? 'bg-sky text-navy'
+                                : 'bg-ash text-slate'
+                            }`}
+                          >
                             {u.role}
                           </span>
                         </td>
@@ -591,18 +1086,51 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                           <div className="text-[11px] opacity-75">{u.phone}</div>
                         </td>
                         <td className="py-3 px-4">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                            u.status === 'Active' || u.status === 'On-Duty'
-                              ? 'bg-mint text-brand'
-                              : u.status === 'Break'
-                              ? 'bg-amber/15 text-amber'
-                              : 'bg-ash text-slate'
-                          }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${u.status === 'Offline' ? 'bg-slate' : 'bg-brand'}`} />
-                            {u.status}
-                          </span>
+                          {isAdminUser ? (
+                            <select
+                              aria-label={`Duty status for ${u.name}`}
+                              value={u.status}
+                              onChange={(e) => handleUserUpdate(u.id, { status: e.target.value as StaffStatus })}
+                              className="h-8 px-2.5 rounded-full bg-ash border border-line text-[11px] font-bold text-navy outline-none"
+                            >
+                              {STAFF_STATUSES.map((s) => (
+                                <option key={s} value={s}>
+                                  {s}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold bg-mint text-brand">
+                              {u.status}
+                            </span>
+                          )}
                         </td>
-                        <td className="py-3 px-4 text-slate text-[12px]">{u.lastLogin}</td>
+                        <td className="py-3 px-4 text-slate text-[12px]">{timeAgo(u.lastLoginAt)}</td>
+                        {isAdminUser && (
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleResetPin(u.id)}
+                                className="h-7 px-2.5 rounded-full bg-ash hover:bg-line text-navy text-[11px] font-semibold inline-flex items-center gap-1"
+                                title="Generate a new 4-digit PIN"
+                              >
+                                <Key size={12} /> Reset PIN
+                              </button>
+                              {u.id !== me.id && (
+                                <button
+                                  onClick={() => handleUserUpdate(u.id, { is_active: !u.isActive })}
+                                  className={`h-7 px-2.5 rounded-full text-[11px] font-semibold ${
+                                    u.isActive
+                                      ? 'bg-alert/10 hover:bg-alert/20 text-alert'
+                                      : 'bg-mint hover:bg-brand/20 text-brand'
+                                  }`}
+                                >
+                                  {u.isActive ? 'Disable' : 'Enable'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -611,7 +1139,7 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
             </div>
           )}
 
-          {/* Tab 2: 30 Patient Intake Registry */}
+          {/* Tab 2: Patient Intake Registry */}
           {adminTab === 'patients' && (
             <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-4">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -621,27 +1149,41 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                     type="text"
                     value={patientSearch}
                     onChange={(e) => setPatientSearch(e.target.value)}
-                    placeholder="Search by patient name, complaint, desk..."
+                    placeholder="Search by patient name, ID, complaint, desk..."
                     className="w-full h-10 pl-10 pr-4 rounded-full bg-canvas border border-line text-[14px] text-navy outline-none focus:border-accent"
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setPatientFilter('all')}
-                    className={`h-9 px-3.5 rounded-full text-[13px] font-bold ${patientFilter === 'all' ? 'bg-navy text-canvas' : 'bg-canvas text-slate border border-line'}`}
+                    className={`h-9 px-3.5 rounded-full text-[13px] font-bold ${
+                      patientFilter === 'all' ? 'bg-navy text-canvas' : 'bg-canvas text-slate border border-line'
+                    }`}
                   >
                     All ({patients.length})
                   </button>
                   <button
+                    onClick={() => setPatientFilter('active')}
+                    className={`h-9 px-3.5 rounded-full text-[13px] font-bold ${
+                      patientFilter === 'active' ? 'bg-accent text-canvas' : 'bg-canvas text-slate border border-line'
+                    }`}
+                  >
+                    Active ({patients.filter((p) => p.status !== 'Completed').length})
+                  </button>
+                  <button
                     onClick={() => setPatientFilter('urgent')}
-                    className={`h-9 px-3.5 rounded-full text-[13px] font-bold ${patientFilter === 'urgent' ? 'bg-alert text-canvas' : 'bg-canvas text-slate border border-line'}`}
+                    className={`h-9 px-3.5 rounded-full text-[13px] font-bold ${
+                      patientFilter === 'urgent' ? 'bg-alert text-canvas' : 'bg-canvas text-slate border border-line'
+                    }`}
                   >
                     Urgent Only ({patients.filter((p) => p.urgent).length})
                   </button>
                   <button
                     onClick={() => setPatientFilter('waiting')}
-                    className={`h-9 px-3.5 rounded-full text-[13px] font-bold ${patientFilter === 'waiting' ? 'bg-amber text-navy' : 'bg-canvas text-slate border border-line'}`}
+                    className={`h-9 px-3.5 rounded-full text-[13px] font-bold ${
+                      patientFilter === 'waiting' ? 'bg-amber text-navy' : 'bg-canvas text-slate border border-line'
+                    }`}
                   >
                     Waiting ({patients.filter((p) => p.status === 'Waiting').length})
                   </button>
@@ -657,24 +1199,39 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                       <th className="py-3.5 px-4">Chief Complaint</th>
                       <th className="py-3.5 px-4">Body Area</th>
                       <th className="py-3.5 px-4">Duration</th>
-                      <th className="py-3.5 px-4">Language / KSL</th>
                       <th className="py-3.5 px-4">Desk</th>
+                      <th className="py-3.5 px-4">Assigned Clinician</th>
                       <th className="py-3.5 px-4">Urgency</th>
-                      <th className="py-3.5 px-4">Status</th>
+                      <th className="py-3.5 px-4">Workflow Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
                     {filteredPatients.map((p) => (
                       <tr key={p.id} className="hover:bg-ash/40 transition-colors">
-                        <td className="py-3 px-4 font-mono font-bold text-[12px] text-brand">{p.id}</td>
-                        <td className="py-3 px-4 font-bold text-navy">{p.name}</td>
-                        <td className="py-3 px-4 font-medium">
-                          {p.symptom} <span className="text-[12px] text-slate font-normal">({p.symptomSw})</span>
+                        <td className="py-3 px-4 font-mono font-bold text-[12px] text-brand">
+                          <button
+                            onClick={() => {
+                              setSelectedPatientId(p.id)
+                              setCurrentRole('nurse')
+                            }}
+                            className="hover:underline"
+                            title="Open in Nurse Console"
+                          >
+                            {p.id}
+                          </button>
                         </td>
-                        <td className="py-3 px-4 text-slate text-[13px]">{p.places.join(', ') || 'General'}</td>
-                        <td className="py-3 px-4 text-slate text-[13px]">{p.duration}</td>
-                        <td className="py-3 px-4 text-slate text-[12px]">{p.lang}</td>
+                        <td className="py-3 px-4 font-bold text-navy">
+                          <div>{p.name}</div>
+                          <div className="text-[11px] font-normal text-slate">{timeAgo(p.createdAt)} · {p.lang}</div>
+                        </td>
+                        <td className="py-3 px-4 font-medium">
+                          {p.symptom || 'Checking in...'}{' '}
+                          {p.symptomSw && <span className="text-[12px] text-slate font-normal">({p.symptomSw})</span>}
+                        </td>
+                        <td className="py-3 px-4 text-slate text-[13px]">{p.places.join(', ') || '—'}</td>
+                        <td className="py-3 px-4 text-slate text-[13px]">{p.duration || '—'}</td>
                         <td className="py-3 px-4 font-semibold text-navy text-[13px]">{p.desk}</td>
+                        <td className="py-3 px-4 text-slate text-[13px]">{p.assignedTo || 'Unassigned'}</td>
                         <td className="py-3 px-4">
                           {p.urgent ? (
                             <span className="px-2 py-0.5 rounded-full bg-alert text-canvas text-[11px] font-bold inline-flex items-center gap-1">
@@ -687,13 +1244,18 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                           )}
                         </td>
                         <td className="py-3 px-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                            p.status === 'Waiting' ? 'bg-amber/15 text-amber' :
-                            p.status === 'In Triage' ? 'bg-sky text-navy' :
-                            p.status === 'With Doctor' ? 'bg-mint text-brand' : 'bg-ash text-slate'
-                          }`}>
-                            {p.status}
-                          </span>
+                          <select
+                            aria-label={`Status for ${p.name}`}
+                            value={p.status}
+                            onChange={(e) => handlePatientStatusChange(p.id, e.target.value as PatientStatus)}
+                            className="h-8 px-2.5 rounded-full bg-ash border border-line text-[11px] font-bold text-navy outline-none"
+                          >
+                            {PATIENT_STATUSES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                       </tr>
                     ))}
@@ -706,74 +1268,333 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
           {/* Tab 3: Reception Kiosks Fleet */}
           {adminTab === 'kiosks' && (
             <div className="grid md:grid-cols-3 gap-6">
-              {[
-                { desk: 'Desk 1 · Emergency Admitting', device: 'iPad Pro 12.9" (Reception Terminal)', status: 'Online', latency: '42ms', mic: 'Boundary Mic Active', nurse: 'Beatrice Akinyi', intakes: 8 },
-                { desk: 'Desk 2 · Pediatric Registration', device: 'Samsung Galaxy Tab S9', status: 'Online', latency: '38ms', mic: 'Dual Array Mic', nurse: 'Grace Njeri', intakes: 6 },
-                { desk: 'Desk 3 · Main Outpatient Lobby', device: 'iPad Pro 12.9" (Main Kiosk)', status: 'Online · Active', latency: '35ms', mic: 'Directional Array Active', nurse: 'Joyce Mwangi', intakes: 12 },
-                { desk: 'Desk 4 · ENT & Audiology Desk', device: 'Surface Pro 9', status: 'Online', latency: '40ms', mic: 'Specialized Acoustic Array', nurse: 'Mercy Korir', intakes: 5 },
-                { desk: 'Desk 5 · Maternity Wing Counter', device: 'iPad Air 11"', status: 'Online', latency: '45ms', mic: 'Boundary Mic Active', nurse: 'Esther Moraa', intakes: 4 },
-                { desk: 'Desk 6 · Specialized Diagnostics', device: 'Samsung Galaxy Tab S9', status: 'Online', latency: '39ms', mic: 'Directional Mic', nurse: 'Lilian Chepkemoi', intakes: 3 },
-              ].map((k) => (
-                <div key={k.desk} className="p-6 rounded-[22px] bg-ash/60 border border-line flex flex-col gap-4">
+              {terminals.map((k) => (
+                <div key={k.id} className="p-6 rounded-[22px] bg-ash/60 border border-line flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    <span className="h-6 px-2.5 rounded-full bg-mint text-brand text-[11px] font-bold flex items-center gap-1">
-                      <Broadcast size={13} className="animate-pulse" /> {k.status}
+                    <span
+                      className={`h-6 px-2.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 ${
+                        k.online ? 'bg-mint text-brand' : 'bg-canvas text-slate border border-line'
+                      }`}
+                    >
+                      <Broadcast size={13} className={k.online ? 'animate-pulse' : ''} />
+                      {k.inSession ? 'Active Intake Session' : k.online ? 'Online · Live Heartbeat' : 'Standby · Ready'}
                     </span>
-                    <span className="text-[12px] text-slate font-mono">{k.latency}</span>
+                    <span className="text-[12px] text-slate font-mono">
+                      {k.latencyMs !== null ? `${k.latencyMs}ms` : k.id}
+                    </span>
                   </div>
                   <div>
-                    <h3 className="font-display font-bold text-[18px] text-navy">{k.desk}</h3>
-                    <p className="text-[13px] text-slate mt-0.5">{k.device}</p>
+                    <h3 className="font-display font-bold text-[18px] text-navy">
+                      {k.desk} · {k.location}
+                    </h3>
+                    <p className="text-[13px] text-slate mt-0.5">{k.deviceType}</p>
                   </div>
                   <div className="pt-3 border-t border-line text-[13px] space-y-1 text-slate">
-                    <div>Audio: <span className="font-semibold text-navy">{k.mic}</span></div>
-                    <div>Staff: <span className="font-semibold text-navy">{k.nurse}</span></div>
-                    <div>Today's Intakes: <span className="font-bold text-accent">{k.intakes} patients</span></div>
+                    <div>
+                      Audio: <span className="font-semibold text-navy">{k.microphone}</span>
+                    </div>
+                    <div>
+                      Assigned Staff: <span className="font-semibold text-navy">{k.assignedTo || 'Unassigned'}</span>
+                    </div>
+                    <div>
+                      Last Heartbeat: <span className="font-semibold text-navy">{timeAgo(k.lastHeartbeatAt)}</span>
+                    </div>
+                    <div>
+                      24h Intakes: <span className="font-bold text-accent">{k.intakes24h} patients</span>
+                    </div>
                   </div>
                   <a
-                    href="#/kiosk"
+                    href={`#/kiosk?terminal=${k.id}`}
                     className="mt-2 w-full h-10 rounded-full bg-canvas hover:bg-line border border-line font-bold text-[13px] text-navy flex items-center justify-center gap-1.5 transition-colors"
                   >
-                    Open Live Kiosk Feed <CaretRight size={14} />
+                    Open {k.desk} Tablet <CaretRight size={14} />
                   </a>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Tab 4: Compliance & Privacy Wipes */}
-          {adminTab === 'compliance' && (
-            <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
+          {/* TAB: SYMPTOM CARDS */}
+          {adminTab === 'cards' && (
+            <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-[18px] font-display font-bold text-navy flex items-center gap-2">
-                    <ShieldCheck size={20} className="text-brand" /> Kenya Data Protection Act (DPA) & Medical Privacy Audit
-                  </h3>
-                  <p className="text-[13px] text-slate">Automatic verification of zero-retention terminal wiping</p>
+                  <h2 className="text-[20px] font-display font-bold text-navy">Pictorial Symptom Cards Catalog</h2>
+                  <p className="text-[13px] text-slate">Manage bilingual triage symptom cards and keyword triggers displayed on patient kiosks.</p>
                 </div>
-                <span className="h-7 px-3 rounded-full bg-mint text-brand text-[12px] font-bold flex items-center gap-1">
-                  <Check size={14} /> Audited Compliant
-                </span>
+                {catalogToast && (
+                  <span className="px-3 py-1.5 rounded-full bg-mint text-brand text-[12px] font-bold">{catalogToast}</span>
+                )}
               </div>
 
-              <div className="rounded-[18px] bg-canvas border border-line p-5 space-y-3 text-[14px]">
-                <div className="flex items-center justify-between pb-3 border-b border-line">
-                  <span className="font-semibold text-navy">Automatic 30-Second Privacy Wipe</span>
-                  <span className="text-brand font-bold">ACTIVE (Enabled on all 6 desks)</span>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {symptomCards.map((card) => {
+                  const IconComp = iconForKey(card.iconKey)
+                  return (
+                    <div
+                      key={card.id}
+                      className={`p-4 rounded-[18px] bg-canvas border flex flex-col gap-3 ${
+                        card.isActive ? 'border-line' : 'border-dashed border-slate/40 opacity-65'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-3">
+                          <span className="w-11 h-11 rounded-[12px] bg-sky text-brand grid place-items-center shrink-0">
+                            <IconComp size={24} />
+                          </span>
+                          <div>
+                            <p className="font-bold text-[15px] text-navy">{card.en}</p>
+                            <p className="text-[13px] text-slate">{card.sw}</p>
+                          </div>
+                        </div>
+                        {card.urgent && (
+                          <span className="px-2 py-0.5 rounded-full bg-alert text-canvas text-[10px] font-bold uppercase">Urgent</span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {card.keywords.map((kw) => (
+                          <span key={kw} className="px-2 py-0.5 rounded bg-ash text-[11px] font-mono text-slate">{kw}</span>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-line mt-auto">
+                        <button
+                          onClick={async () => {
+                            await catalogApi.updateSymptomCard(card.id, { is_active: !card.isActive })
+                            loadAll()
+                          }}
+                          className={`h-8 px-3 rounded-full text-[12px] font-bold ${
+                            card.isActive ? 'bg-mint text-brand' : 'bg-ash text-slate'
+                          }`}
+                        >
+                          {card.isActive ? 'Active' : 'Inactive'}
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await catalogApi.deleteSymptomCard(card.id)
+                            loadAll()
+                          }}
+                          aria-label={`Delete ${card.en}`}
+                          className="h-8 px-2.5 rounded-full hover:bg-alert/10 text-alert text-[12px] font-semibold inline-flex items-center gap-1"
+                        >
+                          <Trash size={14} /> Delete
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: KSL VIDEO PROMPTS */}
+          {adminTab === 'ksl' && (
+            <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[20px] font-display font-bold text-navy">Kenyan Sign Language (KSL) Video Prompts</h2>
+                  <p className="text-[13px] text-slate">Upload pre-recorded KSL videos (.mp4/.webm) and configure speech trigger keywords for automatic playback.</p>
                 </div>
-                <div className="flex items-center justify-between pb-3 border-b border-line">
-                  <span className="font-semibold text-navy">Local Cache Encryption</span>
-                  <span className="text-brand font-bold">AES-256 Enabled</span>
+                {catalogToast && (
+                  <span className="px-3 py-1.5 rounded-full bg-mint text-brand text-[12px] font-bold">{catalogToast}</span>
+                )}
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {kslPrompts.map((p) => (
+                  <div
+                    key={p.id}
+                    className={`p-4 rounded-[18px] bg-canvas border flex flex-col gap-3 ${
+                      p.isActive ? 'border-line' : 'border-dashed border-slate/40 opacity-65'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-[11px] font-mono font-bold text-accent">{p.id}</span>
+                        <h3 className="font-bold text-[15px] text-navy">{p.title}</h3>
+                        <p className="text-[13px] text-navy mt-0.5">{p.questionEn}</p>
+                        <p className="text-[12px] text-slate italic">{p.questionSw}</p>
+                      </div>
+                      <button
+                        onClick={() => setPreviewKsl(p)}
+                        className="h-8 px-3 rounded-full bg-sky hover:bg-navy hover:text-canvas text-navy text-[12px] font-bold inline-flex items-center gap-1 shrink-0 transition-colors"
+                      >
+                        <Play size={12} weight="fill" /> Preview
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {p.triggerKeywords.map((kw) => (
+                        <span key={kw} className="px-2 py-0.5 rounded bg-ash text-[11px] font-mono text-slate">{kw}</span>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-line mt-auto">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            await catalogApi.updateKslPrompt(p.id, { is_active: !p.isActive })
+                            loadAll()
+                          }}
+                          className={`h-8 px-3 rounded-full text-[12px] font-bold ${
+                            p.isActive ? 'bg-mint text-brand' : 'bg-ash text-slate'
+                          }`}
+                        >
+                          {p.isActive ? 'Active' : 'Inactive'}
+                        </button>
+                        <label className="h-8 px-3 rounded-full bg-ash hover:bg-sky text-navy text-[12px] font-semibold inline-flex items-center gap-1 cursor-pointer">
+                          <UploadSimple size={14} /> Upload Video
+                          <input
+                            type="file"
+                            accept=".mp4,.webm,.ogg,.mov"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              try {
+                                await catalogApi.uploadKslVideo(p.id, file)
+                                setCatalogToast(`Uploaded video for ${p.title}`)
+                                setTimeout(() => setCatalogToast(''), 3000)
+                                loadAll()
+                              } catch (err) {
+                                setCatalogToast(err instanceof Error ? err.message : 'Upload failed')
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await catalogApi.deleteKslPrompt(p.id)
+                          loadAll()
+                        }}
+                        className="h-8 px-2.5 rounded-full hover:bg-alert/10 text-alert text-[12px] font-semibold inline-flex items-center gap-1"
+                      >
+                        <Trash size={14} /> Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tab 4: Compliance & Privacy Audit Trail */}
+          {adminTab === 'compliance' && (
+            <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-[18px] font-display font-bold text-navy flex items-center gap-2">
+                    <ShieldCheck size={20} className="text-brand" /> Kenya Data Protection Act (DPA) & Live Audit Trail
+                  </h3>
+                  <p className="text-[13px] text-slate">
+                    Every staff login, patient check-in, tablet message, interpreter dispatch, and 30-second privacy wipe is recorded.
+                  </p>
                 </div>
-                <div className="flex items-center justify-between pb-3 border-b border-line">
-                  <span className="font-semibold text-navy">Audio Recording Storage Policy</span>
-                  <span className="text-brand font-bold">Ephemeral Streaming Only (No voice audio saved)</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-navy">KSL Video Clip Licensing</span>
-                  <span className="text-brand font-bold">Verified with Kenya National Association of the Deaf (KNAD)</span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={auditEventFilter}
+                    onChange={(e) => setAuditEventFilter(e.target.value)}
+                    className="h-9 px-3 rounded-full bg-canvas border border-line text-[12px] font-bold text-navy outline-none"
+                  >
+                    <option value="all">All Event Types ({auditLogs.length})</option>
+                    <option value="SCREEN_WIPED">SCREEN_WIPED</option>
+                    <option value="INTAKE_STARTED">INTAKE_STARTED</option>
+                    <option value="INTAKE_COMPLETED">INTAKE_COMPLETED</option>
+                    <option value="DESK_MESSAGE">DESK_MESSAGE</option>
+                    <option value="INTERPRETER_REQUESTED">INTERPRETER_REQUESTED</option>
+                    <option value="INTERPRETER_DISPATCHED">INTERPRETER_DISPATCHED</option>
+                    <option value="PATIENT_STATUS">PATIENT_STATUS</option>
+                    <option value="LOGIN">LOGIN</option>
+                    <option value="USER_CREATED">USER_CREATED</option>
+                  </select>
+                  <span className="h-8 px-3 rounded-full bg-mint text-brand text-[12px] font-bold flex items-center gap-1">
+                    <Check size={14} /> DPA Audited
+                  </span>
                 </div>
               </div>
+
+              <div className="rounded-[18px] bg-canvas border border-line overflow-x-auto">
+                <table className="w-full text-left text-[13px]">
+                  <thead className="bg-ash/80 border-b border-line text-[11px] uppercase font-bold text-slate tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Time</th>
+                      <th className="py-3 px-4">Event Type</th>
+                      <th className="py-3 px-4">Actor</th>
+                      <th className="py-3 px-4">Terminal / Patient</th>
+                      <th className="py-3 px-4">Audit Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-ash/40">
+                        <td className="py-2.5 px-4 text-slate whitespace-nowrap">
+                          {clockTime(log.createdAt)} · {timeAgo(log.createdAt)}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span className="px-2 py-0.5 rounded bg-ash font-mono font-bold text-[11px] text-brand">
+                            {log.eventType}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-navy">{log.actorName || 'Kiosk Tablet'}</td>
+                        <td className="py-2.5 px-4 font-mono text-[12px] text-slate">
+                          {[log.terminalId, log.patientId].filter(Boolean).join(' · ') || '—'}
+                        </td>
+                        <td className="py-2.5 px-4 text-navy">{log.details}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Modal: Add Symptom Card */}
+          {newCardModal && (
+            <div className="fixed inset-0 z-50 bg-navy/50 backdrop-blur-sm grid place-items-center p-4">
+              <div className="w-full max-w-[480px] rounded-[28px] bg-canvas border border-line p-8 flex flex-col gap-4 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-display font-bold text-[20px] text-navy">Add Symptom Card</h3>
+                  <button onClick={() => setNewCardModal(false)} className="w-8 h-8 rounded-full bg-ash grid place-items-center text-slate"><X size={16} /></button>
+                </div>
+                <form onSubmit={handleCreateSymptomCard} className="flex flex-col gap-3">
+                  <input required placeholder="English label (e.g. Chest Pain)" value={cardForm.en} onChange={(e) => setCardForm({ ...cardForm, en: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <input required placeholder="Kiswahili label (e.g. Maumivu ya Kifua)" value={cardForm.sw} onChange={(e) => setCardForm({ ...cardForm, sw: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <select value={cardForm.icon_key} onChange={(e) => setCardForm({ ...cardForm, icon_key: e.target.value })} className="h-11 px-3 rounded-[12px] bg-ash/50 border border-line text-[14px]">
+                    {ICON_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                  </select>
+                  <input placeholder="Trigger keywords (comma-separated, e.g. chest, heart, kifua)" value={cardForm.keywords} onChange={(e) => setCardForm({ ...cardForm, keywords: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <label className="flex items-center gap-2 text-[14px] font-semibold text-navy">
+                    <input type="checkbox" checked={cardForm.urgent} onChange={(e) => setCardForm({ ...cardForm, urgent: e.target.checked })} />
+                    Flag as Urgent Triage Symptom
+                  </label>
+                  <button type="submit" className="h-11 rounded-full bg-accent hover:bg-brand text-canvas font-bold text-[14px]">Save Symptom Card</button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal: Add KSL Video Prompt */}
+          {newKslModal && (
+            <div className="fixed inset-0 z-50 bg-navy/50 backdrop-blur-sm grid place-items-center p-4">
+              <div className="w-full max-w-[500px] rounded-[28px] bg-canvas border border-line p-8 flex flex-col gap-4 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-display font-bold text-[20px] text-navy">Add KSL Video Prompt</h3>
+                  <button onClick={() => setNewKslModal(false)} className="w-8 h-8 rounded-full bg-ash grid place-items-center text-slate"><X size={16} /></button>
+                </div>
+                <form onSubmit={handleCreateKslPrompt} className="flex flex-col gap-3">
+                  <input required placeholder="Prompt title (e.g. Asthma Check)" value={kslForm.title} onChange={(e) => setKslForm({ ...kslForm, title: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <input required placeholder="English question" value={kslForm.question_en} onChange={(e) => setKslForm({ ...kslForm, question_en: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <input required placeholder="Kiswahili question" value={kslForm.question_sw} onChange={(e) => setKslForm({ ...kslForm, question_sw: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <input placeholder="KSL Gloss (e.g. BREATHE + HARD + YOU?)" value={kslForm.ksl_gloss} onChange={(e) => setKslForm({ ...kslForm, ksl_gloss: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <input placeholder="Trigger keywords (comma-separated)" value={kslForm.trigger_keywords} onChange={(e) => setKslForm({ ...kslForm, trigger_keywords: e.target.value })} className="h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px]" />
+                  <button type="submit" className="h-11 rounded-full bg-accent hover:bg-brand text-canvas font-bold text-[14px]">Save KSL Prompt</button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Modal: Preview KSL Video */}
+          {previewKsl && (
+            <div className="fixed inset-0 z-50 bg-navy/50 backdrop-blur-sm grid place-items-center p-4">
+              <KslVideoPlayer prompt={previewKsl} onClose={() => setPreviewKsl(null)} />
             </div>
           )}
 
@@ -785,7 +1606,10 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                   <div className="flex items-center gap-2 font-display font-bold text-[20px] text-navy">
                     <UserPlus size={22} className="text-accent" /> Register Hospital Staff
                   </div>
-                  <button onClick={() => setNewUserModal(false)} className="w-8 h-8 rounded-full bg-ash grid place-items-center text-slate">
+                  <button
+                    onClick={() => setNewUserModal(false)}
+                    className="w-8 h-8 rounded-full bg-ash grid place-items-center text-slate"
+                  >
                     <X size={16} />
                   </button>
                 </div>
@@ -798,25 +1622,40 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                       required
                       value={newUserName}
                       onChange={(e) => setNewUserName(e.target.value)}
-                      placeholder="e.g. Nurse Damaris Wekesa"
+                      placeholder="e.g. Nurse Martha Wambugu"
                       className="w-full h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px] text-navy outline-none focus:border-accent"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[12px] font-semibold text-slate uppercase mb-1">Role</label>
-                    <select
-                      value={newUserRole}
-                      onChange={(e) => setNewUserRole(e.target.value as any)}
-                      className="w-full h-11 px-3 rounded-[12px] bg-ash/50 border border-line text-[14px] text-navy outline-none font-medium"
-                    >
-                      <option value="Triage Nurse">Triage Nurse</option>
-                      <option value="Reception Officer">Reception Officer</option>
-                      <option value="Medical Doctor">Medical Doctor</option>
-                      <option value="KSL Interpreter">KSL Interpreter</option>
-                      <option value="Hospital Administrator">Hospital Administrator</option>
-                      <option value="Audiology Specialist">Audiology Specialist</option>
-                    </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[12px] font-semibold text-slate uppercase mb-1">Role</label>
+                      <select
+                        value={newUserRole}
+                        onChange={(e) => setNewUserRole(e.target.value as StaffRole)}
+                        className="w-full h-11 px-3 rounded-[12px] bg-ash/50 border border-line text-[14px] text-navy outline-none font-medium"
+                      >
+                        {ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-semibold text-slate uppercase mb-1">
+                        Initial PIN (optional)
+                      </label>
+                      <input
+                        type="text"
+                        pattern="\d{4,6}"
+                        maxLength={6}
+                        value={newUserPin}
+                        onChange={(e) => setNewUserPin(e.target.value)}
+                        placeholder="Auto 4-digit"
+                        className="w-full h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px] text-navy font-mono outline-none focus:border-accent"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -827,6 +1666,17 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                       value={newUserDept}
                       onChange={(e) => setNewUserDept(e.target.value)}
                       placeholder="e.g. Desk 3 · Outpatient Reception"
+                      className="w-full h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px] text-navy outline-none focus:border-accent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[12px] font-semibold text-slate uppercase mb-1">Phone Number</label>
+                    <input
+                      type="text"
+                      value={newUserPhone}
+                      onChange={(e) => setNewUserPhone(e.target.value)}
+                      placeholder="+254 722 000 000"
                       className="w-full h-11 px-4 rounded-[12px] bg-ash/50 border border-line text-[14px] text-navy outline-none focus:border-accent"
                     />
                   </div>
@@ -854,267 +1704,586 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
       ) : (
         /* ---------- NURSE VIEW ---------- */
         <main className="flex-1 max-w-[1340px] w-full mx-auto p-4 md:p-8 grid lg:grid-cols-12 gap-6">
-          {/* Left Column: Active Patient Overview & Live Transcript */}
           <section className="lg:col-span-8 flex flex-col gap-6">
-            {/* Active Intake Card */}
-            <div className="bg-ash/50 rounded-[24px] border border-line p-6 md:p-8">
-              <div className="flex flex-wrap items-start justify-between gap-4 pb-6 border-b border-line">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[12px] uppercase font-bold tracking-wider text-slate">Active Desk Intake</span>
-                    <span className="h-5 px-2 rounded-full bg-sky text-[11px] text-navy font-semibold inline-flex items-center">
-                      {activePatient.desk}
-                    </span>
+            {activePatient ? (
+              <>
+                <div className="bg-ash/50 rounded-[24px] border border-line p-6 md:p-8">
+                  <div className="flex flex-wrap items-start justify-between gap-4 pb-6 border-b border-line">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[12px] uppercase font-bold tracking-wider text-slate">
+                          Active Desk Intake · {activePatient.id}
+                        </span>
+                        <span className="h-5 px-2 rounded-full bg-sky text-[11px] text-navy font-semibold inline-flex items-center">
+                          {activePatient.desk}
+                        </span>
+                        {activePatient.assignedTo && (
+                          <span className="h-5 px-2 rounded-full bg-mint text-[11px] text-brand font-semibold inline-flex items-center">
+                            Assigned: {activePatient.assignedTo}
+                          </span>
+                        )}
+                      </div>
+                      <h2 className="text-[28px] font-display font-bold text-navy flex flex-wrap items-center gap-3">
+                        {activePatient.name}
+                        {activePatient.urgent ? (
+                          <span className="h-7 px-3 rounded-full bg-alert text-canvas text-[12px] font-bold inline-flex items-center gap-1">
+                            <Warning size={14} weight="fill" /> URGENT TRIAGE
+                          </span>
+                        ) : (
+                          <span className="h-7 px-3 rounded-full bg-brand/15 text-brand text-[12px] font-bold inline-flex items-center">
+                            STANDARD TRIAGE
+                          </span>
+                        )}
+                      </h2>
+                      <p className="text-[13px] text-slate mt-0.5">
+                        Checked in {timeAgo(activePatient.createdAt)} · Communication: {activePatient.lang}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] text-slate font-medium">Status:</span>
+                      <select
+                        value={activePatient.status}
+                        onChange={(e) => handlePatientStatusChange(activePatient.id, e.target.value as PatientStatus)}
+                        className="h-10 px-3 rounded-[10px] bg-canvas border border-line text-[13px] font-semibold text-navy focus:border-accent outline-none"
+                      >
+                        {PATIENT_STATUSES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <h2 className="text-[28px] font-display font-bold text-navy flex items-center gap-3">
-                    {activePatient.name}
-                    {activePatient.urgent ? (
-                      <span className="h-7 px-3 rounded-full bg-alert text-canvas text-[12px] font-bold inline-flex items-center gap-1">
-                        <Warning size={14} weight="fill" /> URGENT TRIAGE
+
+                  <div className="grid sm:grid-cols-3 gap-4 pt-6">
+                    <div className="p-4 rounded-[16px] bg-canvas border border-line">
+                      <span className="text-[11px] uppercase tracking-wider text-slate font-bold flex items-center gap-1.5 mb-1">
+                        <Heartbeat size={16} className="text-accent" /> Chief Complaint
                       </span>
+                      <p className="text-[17px] font-bold text-navy leading-tight">
+                        {activePatient.symptom || 'Patient typing...'}
+                      </p>
+                      {activePatient.symptomSw && (
+                        <p className="text-[13px] text-slate mt-0.5">{activePatient.symptomSw}</p>
+                      )}
+                    </div>
+
+                    <div className="p-4 rounded-[16px] bg-canvas border border-line">
+                      <span className="text-[11px] uppercase tracking-wider text-slate font-bold flex items-center gap-1.5 mb-1">
+                        <MapPin size={16} className="text-accent" /> Reported Pain Areas
+                      </span>
+                      <p className="text-[17px] font-bold text-navy leading-tight">
+                        {activePatient.places.length ? activePatient.places.join(', ') : 'Pending selection'}
+                      </p>
+                      <p className="text-[13px] text-slate mt-0.5">Indicated via Body Map</p>
+                    </div>
+
+                    <div className="p-4 rounded-[16px] bg-canvas border border-line">
+                      <span className="text-[11px] uppercase tracking-wider text-slate font-bold flex items-center gap-1.5 mb-1">
+                        <Clock size={16} className="text-accent" /> Duration
+                      </span>
+                      <p className="text-[17px] font-bold text-navy leading-tight">
+                        {activePatient.duration || 'Pending selection'}
+                      </p>
+                      <p className="text-[13px] text-slate mt-0.5">Reported by patient</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Speech-to-Text & Transcript Log */}
+                <div className="bg-ash/50 rounded-[24px] border border-line p-6 md:p-8 flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-[18px] font-display font-bold text-navy flex items-center gap-2">
+                        <ChatText size={20} className="text-accent" /> Live Desk Conversation & Speech-to-Text ({activePatient.desk})
+                      </h3>
+                      <p className="text-[12px] text-slate">
+                        Consent:{' '}
+                        <strong className={activePatient.consentGiven ? 'text-brand' : 'text-amber'}>
+                          {activePatient.consentGiven ? 'Storage Accepted' : 'Declined (Purges on End Session)'}
+                        </strong>
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleToggleMic}
+                        className={`h-10 px-4 rounded-full font-bold text-[13px] inline-flex items-center gap-2 transition-colors ${
+                          micActive
+                            ? 'bg-alert text-canvas shadow-sm'
+                            : 'bg-brand hover:bg-accent text-canvas shadow-sm'
+                        }`}
+                      >
+                        {micActive ? <MicrophoneSlash size={16} /> : <Microphone size={16} />}
+                        {micActive ? 'Pause Live Mic' : 'Start Live Mic'}
+                        {micActive && (
+                          <span className="flex items-end gap-0.5 h-3">
+                            {[0.35, 0.7, 1].map((mult, idx) => (
+                              <span
+                                key={idx}
+                                className="w-1 rounded-full bg-canvas transition-all"
+                                style={{ height: `${Math.max(3, Math.round(micLevel * 12 * mult))}px` }}
+                              />
+                            ))}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRepeatLastCaption}
+                        className="h-10 px-3.5 rounded-full bg-canvas hover:bg-sky border border-line text-navy font-semibold text-[13px] inline-flex items-center gap-1.5 transition-colors"
+                      >
+                        <ArrowCounterClockwise size={15} /> Repeat Last Caption
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleEndSession}
+                        className="h-10 px-4 rounded-full bg-navy hover:bg-accent text-canvas font-bold text-[13px] inline-flex items-center gap-1.5 transition-colors"
+                      >
+                        <CheckCircle size={15} /> End Session & Summary
+                      </button>
+                    </div>
+                  </div>
+
+                  {asrError && (
+                    <div className="px-4 py-2.5 rounded-[12px] bg-amber/20 border border-amber/40 text-navy text-[13px] font-medium">
+                      {asrError}
+                    </div>
+                  )}
+
+                  {interimCaption && (
+                    <div className="px-4 py-2.5 rounded-[12px] bg-mint/70 border border-brand/30 text-navy text-[14px] flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-brand animate-ping" />
+                      <span className="font-semibold">Live ASR:</span> {interimCaption}
+                    </div>
+                  )}
+
+                  {/* Spoken / Dictated Caption Stream Input (works on any browser or headless test) */}
+                  <div className="flex flex-wrap items-center gap-2 p-3 rounded-[14px] bg-canvas border border-line">
+                    <input
+                      type="text"
+                      value={dictateText}
+                      onChange={(e) => {
+                        setDictateText(e.target.value)
+                        if (e.target.value.trim()) {
+                          sendWsEvent({ type: 'live_caption', text: applyClinicalVocabulary(e.target.value), interim: true })
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && dictateText.trim()) {
+                          e.preventDefault()
+                          submitSpokenCaption(dictateText, simulateUncertain ? 0.62 : 0.94)
+                          setDictateText('')
+                        }
+                      }}
+                      placeholder={
+                        isSpeechRecognitionSupported()
+                          ? 'Speak into mic or type live spoken caption to stream to kiosk...'
+                          : 'Type spoken clinician caption to stream in real time to patient kiosk...'
+                      }
+                      className="flex-1 min-w-[220px] h-10 px-3 rounded-[10px] bg-ash/50 border border-line text-[14px] text-navy outline-none focus:border-accent"
+                    />
+                    <label className="flex items-center gap-1.5 text-[12px] font-semibold text-slate px-2">
+                      <input
+                        type="checkbox"
+                        checked={simulateUncertain}
+                        onChange={(e) => setSimulateUncertain(e.target.checked)}
+                      />
+                      Low confidence
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!dictateText.trim()}
+                      onClick={() => {
+                        submitSpokenCaption(dictateText, simulateUncertain ? 0.62 : 0.94)
+                        setDictateText('')
+                      }}
+                      className="h-10 px-4 rounded-[10px] bg-brand hover:bg-accent disabled:opacity-40 text-canvas font-bold text-[13px] inline-flex items-center gap-1.5"
+                    >
+                      <Microphone size={15} /> Stream Caption
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 p-4 rounded-[18px] bg-canvas border border-line max-h-[320px] overflow-y-auto">
+                    {(activePatientDetail?.transcript?.length ?? 0) > 0 ? (
+                      activePatientDetail!.transcript!.map((turn) => (
+                        <div
+                          key={turn.id}
+                          className={`flex flex-col gap-1 ${
+                            turn.speaker === 'patient' ? 'items-end text-right' : 'items-start text-left'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate uppercase">
+                            <span>
+                              {clockTime(turn.createdAt)} ·{' '}
+                              {turn.speaker === 'patient'
+                                ? `Patient (${turn.channel})`
+                                : turn.speaker === 'system'
+                                ? 'System Alert'
+                                : `Nurse (${turn.channel})`}
+                            </span>
+                            {typeof turn.confidence === 'number' && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded font-mono text-[10px] ${
+                                  turn.isUncertain ? 'bg-amber text-navy' : 'bg-ash text-slate'
+                                }`}
+                              >
+                                {Math.round(turn.confidence * 100)}%{turn.isUncertain ? ' · Uncertain' : ''}
+                              </span>
+                            )}
+                            {turn.editedBy && (
+                              <span className="px-1.5 py-0.5 rounded bg-sky text-navy text-[10px]">
+                                Edited by {turn.editedBy}
+                              </span>
+                            )}
+                            {turn.speaker === 'nurse' && editingTurnId !== turn.id && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingTurnId(turn.id)
+                                  setEditingTurnText(turn.text)
+                                }}
+                                className="inline-flex items-center gap-1 text-accent hover:underline"
+                              >
+                                <PencilSimple size={12} /> Edit inline
+                              </button>
+                            )}
+                          </div>
+
+                          {editingTurnId === turn.id ? (
+                            <div className="flex items-center gap-2 w-full max-w-[540px]">
+                              <input
+                                type="text"
+                                value={editingTurnText}
+                                onChange={(e) => setEditingTurnText(e.target.value)}
+                                className="flex-1 h-9 px-3 rounded-[10px] bg-ash border border-accent text-[14px] text-navy outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveTurnEdit(turn.id)}
+                                className="h-9 px-3 rounded-[10px] bg-brand text-canvas text-[12px] font-bold"
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingTurnId(null)}
+                                className="h-9 px-2.5 rounded-[10px] bg-ash text-slate text-[12px]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div
+                              className={`px-4 py-2.5 rounded-[12px] text-[15px] ${
+                                turn.speaker === 'patient'
+                                  ? 'rounded-tr-sm bg-navy text-canvas font-bold'
+                                  : turn.speaker === 'system'
+                                  ? 'bg-amber/20 text-navy font-semibold border border-amber/40'
+                                  : turn.isUncertain
+                                  ? 'rounded-tl-sm bg-amber/20 text-navy font-medium border border-amber'
+                                  : 'rounded-tl-sm bg-mint text-navy font-medium'
+                              }`}
+                            >
+                              {turn.text}
+                            </div>
+                          )}
+                        </div>
+                      ))
                     ) : (
-                      <span className="h-7 px-3 rounded-full bg-brand/15 text-brand text-[12px] font-bold inline-flex items-center">
-                        STANDARD TRIAGE
+                      <p className="text-[14px] text-slate py-6 text-center">
+                        Waiting for patient responses on the {activePatient.desk} tablet...
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Quick Prompt to Patient Screen */}
+                  <div className="pt-2">
+                    <label className="block text-[13px] font-semibold text-slate mb-2">
+                      Send Direct Message / Guidance to {activePatient.desk} Patient Screen:
+                    </label>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {[
+                        'Please have a seat in Bay 3',
+                        'Doctor is reviewing your chart',
+                        'Please prepare your ID / SHIF card',
+                        'An interpreter has been requested',
+                      ].map((msg) => (
+                        <button
+                          key={msg}
+                          onClick={() => handleSendPrompt(msg)}
+                          className="h-8 px-3 rounded-full bg-canvas hover:bg-sky text-navy text-[12px] font-medium border border-line transition-colors"
+                        >
+                          + {msg}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && customPrompt.trim()) {
+                            e.preventDefault()
+                            handleSendPrompt(customPrompt)
+                          }
+                        }}
+                        placeholder={`Type custom note to display on ${activePatient.desk} tablet...`}
+                        className="flex-1 h-11 px-4 rounded-[12px] bg-canvas border border-line text-[14px] text-navy outline-none focus:border-accent"
+                      />
+                      <button
+                        disabled={!customPrompt.trim()}
+                        onClick={() => handleSendPrompt(customPrompt)}
+                        className="h-11 px-5 rounded-[12px] bg-accent hover:bg-brand disabled:opacity-40 text-canvas font-semibold text-[13px] flex items-center gap-1.5 transition-colors"
+                      >
+                        <PaperPlaneRight size={16} /> Send to Tablet
+                      </button>
+                    </div>
+
+                    {promptSentToast && (
+                      <div className="mt-2 text-[13px] text-brand font-semibold flex items-center gap-1.5">
+                        <CheckCircle size={16} /> {promptSentToast}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Clinical Outcome: Prescription / Pharmacy Discharge or Ward Admission */}
+                <div className="bg-ash/50 rounded-[24px] border border-line p-6 md:p-8 flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-[18px] font-display font-bold text-navy flex items-center gap-2">
+                        <FirstAidKit size={20} className="text-accent" /> Clinical Outcome: Medication, Discharge or Admission
+                      </h3>
+                      <p className="text-[12px] text-slate">
+                        Prescribe medication for Pharmacy pickup, discharge the patient to leave, or admit to a hospital ward.
+                      </p>
+                    </div>
+                    {activePatient.disposition && (
+                      <span
+                        className={`h-8 px-3 rounded-full text-[12px] font-bold inline-flex items-center gap-1.5 ${
+                          activePatient.status === 'Admitted'
+                            ? 'bg-alert text-canvas'
+                            : 'bg-mint text-brand border border-brand/25'
+                        }`}
+                      >
+                        {activePatient.disposition}
+                        {activePatient.ward ? ` · ${activePatient.ward}` : ''}
                       </span>
                     )}
-                  </h2>
-                  <p className="text-[13px] text-slate mt-0.5">Checked in {activePatient.time} · Communication: {activePatient.lang}</p>
-                </div>
+                  </div>
 
-                {/* Status Selector */}
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-slate font-medium">Status:</span>
-                  <select
-                    value={activePatient.status}
-                    onChange={(e) => {
-                      const val = e.target.value as TriagePatient['status']
-                      setPatients((prev) =>
-                        prev.map((p, idx) => (idx === activePatientIndex ? { ...p, status: val } : p))
-                      )
-                    }}
-                    className="h-10 px-3 rounded-[10px] bg-canvas border border-line text-[13px] font-semibold text-navy focus:border-accent outline-none"
-                  >
-                    <option value="Waiting">Waiting</option>
-                    <option value="In Triage">In Triage</option>
-                    <option value="With Doctor">With Doctor</option>
-                    <option value="Completed">Completed</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Medical Data Grid */}
-              <div className="grid sm:grid-cols-3 gap-4 pt-6">
-                <div className="p-4 rounded-[16px] bg-canvas border border-line">
-                  <span className="text-[11px] uppercase tracking-wider text-slate font-bold flex items-center gap-1.5 mb-1">
-                    <Heartbeat size={16} className="text-accent" /> Chief Complaint
-                  </span>
-                  <p className="text-[17px] font-bold text-navy leading-tight">{activePatient.symptom}</p>
-                  {activePatient.symptomSw && (
-                    <p className="text-[13px] text-slate mt-0.5">{activePatient.symptomSw}</p>
+                  {(activePatient.diagnosis || activePatient.prescription) && (
+                    <div className="grid sm:grid-cols-2 gap-3 p-3.5 rounded-[14px] bg-canvas border border-line text-[13px]">
+                      <div>
+                        <span className="text-[11px] uppercase font-bold text-slate">Recorded Diagnosis</span>
+                        <p className="font-semibold text-navy">{activePatient.diagnosis || '—'}</p>
+                      </div>
+                      <div>
+                        <span className="text-[11px] uppercase font-bold text-slate">Prescription / Medicine</span>
+                        <p className="font-semibold text-navy">{activePatient.prescription || '—'}</p>
+                      </div>
+                    </div>
                   )}
-                </div>
 
-                <div className="p-4 rounded-[16px] bg-canvas border border-line">
-                  <span className="text-[11px] uppercase tracking-wider text-slate font-bold flex items-center gap-1.5 mb-1">
-                    <MapPin size={16} className="text-accent" /> Reported Pain Areas
-                  </span>
-                  <p className="text-[17px] font-bold text-navy leading-tight">
-                    {activePatient.places.length ? activePatient.places.join(', ') : 'None specified'}
-                  </p>
-                  <p className="text-[13px] text-slate mt-0.5">Indicated via Body Map</p>
-                </div>
-
-                <div className="p-4 rounded-[16px] bg-canvas border border-line">
-                  <span className="text-[11px] uppercase tracking-wider text-slate font-bold flex items-center gap-1.5 mb-1">
-                    <Clock size={16} className="text-accent" /> Duration
-                  </span>
-                  <p className="text-[17px] font-bold text-navy leading-tight">{activePatient.duration}</p>
-                  <p className="text-[13px] text-slate mt-0.5">Reported by patient</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Live Transcript Log */}
-            <div className="bg-ash/50 rounded-[24px] border border-line p-6 md:p-8 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-[18px] font-display font-bold text-navy flex items-center gap-2">
-                    <ChatText size={20} className="text-accent" /> Live Desk Conversation Stream
-                  </h3>
-                  <p className="text-[13px] text-slate">Synchronized real-time speech captions and patient inputs</p>
-                </div>
-                <span className="text-[12px] px-2.5 py-1 rounded-full bg-mint text-brand font-semibold border border-brand/20">
-                  Live Sync
-                </span>
-              </div>
-
-              <div className="space-y-3 p-4 rounded-[18px] bg-canvas border border-line max-h-[300px] overflow-y-auto">
-                <div className="flex flex-col gap-1 items-start text-left">
-                  <span className="text-[11px] font-bold text-slate uppercase">08:14 AM · Nurse (Spoken)</span>
-                  <div className="px-4 py-2.5 rounded-[12px] rounded-tl-sm bg-mint text-navy text-[15px] font-medium">
-                    Good morning. Please tell me your name.
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[12px] font-semibold text-slate uppercase mb-1">Diagnosis / Clinical Impression</label>
+                      <input
+                        type="text"
+                        value={diagInput}
+                        onChange={(e) => setDiagInput(e.target.value)}
+                        placeholder="e.g. Acute Viral Fever / Suspected Angina"
+                        className="w-full h-10 px-3 rounded-[10px] bg-canvas border border-line text-[14px] text-navy outline-none focus:border-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-semibold text-slate uppercase mb-1">Admission Ward & Bed (if admitting)</label>
+                      <input
+                        type="text"
+                        value={wardInput}
+                        onChange={(e) => setWardInput(e.target.value)}
+                        placeholder="e.g. Cardiac Observation Ward B · Bed 4"
+                        className="w-full h-10 px-3 rounded-[10px] bg-canvas border border-line text-[14px] text-navy outline-none focus:border-accent"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-1 items-end text-right">
-                  <span className="text-[11px] font-bold text-slate uppercase">08:14 AM · Patient (On-Screen Keypad)</span>
-                  <div className="px-4 py-2 rounded-[12px] rounded-tr-sm bg-navy text-canvas text-[15px] font-bold">
-                    {activePatient.name}
+                  <div>
+                    <label className="block text-[12px] font-semibold text-slate uppercase mb-1">Prescription & Dosage Instructions</label>
+                    <input
+                      type="text"
+                      value={rxInput}
+                      onChange={(e) => setRxInput(e.target.value)}
+                      placeholder="e.g. Paracetamol 500mg — 2 tablets every 8 hours for 5 days"
+                      className="w-full h-10 px-3 rounded-[10px] bg-canvas border border-line text-[14px] text-navy outline-none focus:border-accent"
+                    />
                   </div>
-                </div>
 
-                <div className="flex flex-col gap-1 items-start text-left">
-                  <span className="text-[11px] font-bold text-slate uppercase">08:15 AM · Nurse (Spoken)</span>
-                  <div className="px-4 py-2.5 rounded-[12px] rounded-tl-sm bg-mint text-navy text-[15px] font-medium">
-                    What brings you in today?
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1 items-end text-right">
-                  <span className="text-[11px] font-bold text-slate uppercase">08:15 AM · Patient (Symptom Card)</span>
-                  <div className="px-4 py-2 rounded-[12px] rounded-tr-sm bg-navy text-canvas text-[15px] font-bold flex items-center gap-2">
-                    <Heartbeat size={18} /> {activePatient.symptom} · {activePatient.symptomSw}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1 items-start text-left">
-                  <span className="text-[11px] font-bold text-slate uppercase">08:16 AM · Nurse (Spoken)</span>
-                  <div className="px-4 py-2.5 rounded-[12px] rounded-tl-sm bg-mint text-navy text-[15px] font-medium">
-                    Can you show me where it hurts?
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1 items-end text-right">
-                  <span className="text-[11px] font-bold text-slate uppercase">08:16 AM · Patient (Body Map)</span>
-                  <div className="px-4 py-2 rounded-[12px] rounded-tr-sm bg-navy text-canvas text-[15px] font-bold">
-                    {activePatient.places.length ? activePatient.places.join(', ') : 'Chest, left'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Prompt to Patient Screen */}
-              <div className="pt-2">
-                <label className="block text-[13px] font-semibold text-slate mb-2">
-                  Send Direct Message / Guidance to Patient Screen:
-                </label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {[
-                    'Please have a seat in Bay 3',
-                    'Doctor is reviewing your chart',
-                    'Please prepare your ID / SHIF card',
-                    'An interpreter has been requested',
-                  ].map((msg) => (
+                  <div className="flex flex-wrap gap-2.5 pt-1">
                     <button
-                      key={msg}
-                      onClick={() => handleSendPrompt(msg)}
-                      className="h-8 px-3 rounded-full bg-canvas hover:bg-sky text-navy text-[12px] font-medium border border-line transition-colors"
+                      type="button"
+                      onClick={() => handleDisposition('pharmacy')}
+                      className="h-10 px-4 rounded-full bg-sky hover:bg-navy hover:text-canvas text-navy font-bold text-[13px] transition-colors"
                     >
-                      + {msg}
+                      1. Send Prescription to Pharmacy
                     </button>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={customPrompt}
-                    onChange={(e) => setCustomPrompt(e.target.value)}
-                    placeholder="Type custom note to show on patient's screen..."
-                    className="flex-1 h-11 px-4 rounded-[12px] bg-canvas border border-line text-[14px] text-navy outline-none focus:border-accent"
-                  />
-                  <button
-                    disabled={!customPrompt.trim()}
-                    onClick={() => handleSendPrompt(customPrompt)}
-                    className="h-11 px-5 rounded-[12px] bg-accent hover:bg-brand disabled:opacity-40 text-canvas font-semibold text-[13px] flex items-center gap-1.5 transition-colors"
-                  >
-                    <PaperPlaneRight size={16} /> Send to Tablet
-                  </button>
-                </div>
-
-                {promptSentToast && (
-                  <div className="mt-2 text-[13px] text-brand font-semibold flex items-center gap-1.5">
-                    <CheckCircle size={16} /> {promptSentToast}
+                    <button
+                      type="button"
+                      onClick={() => handleDisposition('discharged')}
+                      className="h-10 px-4 rounded-full bg-brand hover:bg-accent text-canvas font-bold text-[13px] transition-colors shadow-sm"
+                    >
+                      2. Give Medicine & Discharge Patient
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDisposition('admitted')}
+                      className="h-10 px-4 rounded-full bg-alert hover:opacity-90 text-canvas font-bold text-[13px] transition-colors shadow-sm"
+                    >
+                      Admit Patient to Ward
+                    </button>
                   </div>
-                )}
+                </div>
+              </>
+            ) : (
+              <div className="bg-ash/50 rounded-[24px] border border-line p-10 text-center text-slate">
+                No patient intakes found. Open the kiosk to start a check-in.
               </div>
-            </div>
+            )}
           </section>
 
-          {/* Right Column: Actions & Reception Queue */}
+          {/* Right Column: Actions, Interpreter Queue & Reception Queue */}
           <aside className="lg:col-span-4 flex flex-col gap-6">
-            {/* Quick Actions Card */}
             <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-4">
               <h3 className="text-[17px] font-display font-bold text-navy flex items-center gap-2">
                 <Stethoscope size={20} className="text-accent" /> Clinical Triage Actions
               </h3>
 
+              {actionToast && (
+                <div className="p-2.5 rounded-[10px] bg-mint text-brand text-[12px] font-bold flex items-center gap-1.5">
+                  <CheckCircle size={16} /> {actionToast}
+                </div>
+              )}
+
               <div className="flex flex-col gap-2.5">
                 <button
-                  onClick={() => setInterpreterCalled(true)}
-                  className={`w-full h-12 px-4 rounded-[12px] font-semibold text-[14px] flex items-center justify-between border transition-colors ${
-                    interpreterCalled
-                      ? 'bg-amber text-navy border-amber font-bold'
-                      : 'bg-canvas text-navy border-line hover:border-accent'
-                  }`}
+                  onClick={handleRequestInterpreterForActive}
+                  className="w-full h-12 px-4 rounded-[12px] bg-canvas hover:border-accent text-navy font-semibold text-[14px] flex items-center justify-between border border-line transition-colors"
                 >
                   <span className="flex items-center gap-2">
-                    <PhoneCall size={18} />
-                    {interpreterCalled ? 'KSL Interpreter Dispatched' : 'Request On-Site KSL Interpreter'}
+                    <PhoneCall size={18} className="text-accent" />
+                    Request KSL Interpreter ({activePatient?.desk || 'Desk 3'})
                   </span>
                   <span className="text-[11px] px-2 py-0.5 rounded bg-navy/10">Priority</span>
                 </button>
 
-                <button
-                  onClick={() => {
-                    setPatients((prev) =>
-                      prev.map((p, idx) => (idx === activePatientIndex ? { ...p, status: 'In Triage' } : p))
-                    )
-                  }}
-                  className="w-full h-12 px-4 rounded-[12px] bg-canvas hover:bg-sky text-navy font-semibold text-[14px] flex items-center justify-between border border-line transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <FirstAidKit size={18} /> Handoff to Triage Bay #2
-                  </span>
-                  <CaretRight size={16} className="text-slate" />
-                </button>
+                {activePatient && (
+                  <>
+                    <button
+                      onClick={() => handleAssignToMe(activePatient.id)}
+                      className="w-full h-12 px-4 rounded-[12px] bg-canvas hover:bg-sky text-navy font-semibold text-[14px] flex items-center justify-between border border-line transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <UserCheck size={18} className="text-brand" /> Assign Patient to Me ({me.name.split(' ')[0]})
+                      </span>
+                      <CaretRight size={16} className="text-slate" />
+                    </button>
+
+                    <button
+                      onClick={() => handlePatientStatusChange(activePatient.id, 'In Triage')}
+                      className="w-full h-12 px-4 rounded-[12px] bg-canvas hover:bg-sky text-navy font-semibold text-[14px] flex items-center justify-between border border-line transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FirstAidKit size={18} /> Handoff to Triage Bay #2
+                      </span>
+                      <CaretRight size={16} className="text-slate" />
+                    </button>
+                  </>
+                )}
 
                 <a
-                  href="#/kiosk"
-                  target="_blank"
-                  rel="noreferrer"
+                  href={`#/kiosk?terminal=${activePatient?.terminalId || 'TERM-03'}`}
                   className="w-full h-12 px-4 rounded-[12px] bg-accent hover:bg-brand text-canvas font-semibold text-[14px] flex items-center justify-between transition-colors shadow-sm"
                 >
                   <span className="flex items-center gap-2">
-                    <Broadcast size={18} /> Open Desk 3 Patient Tablet
+                    <Broadcast size={18} /> Open {activePatient?.desk || 'Desk 3'} Patient Tablet
                   </span>
                   <CaretRight size={16} />
                 </a>
               </div>
+
+              {/* Open KSL Interpreter Requests */}
+              {interpRequests.length > 0 && (
+                <div className="pt-3 border-t border-line flex flex-col gap-2">
+                  <span className="text-[12px] uppercase font-bold tracking-wider text-slate flex items-center gap-1.5">
+                    <HandWaving size={15} className="text-amber" /> Active KSL Interpreter Queue ({interpRequests.length})
+                  </span>
+                  {interpRequests.map((req) => (
+                    <div key={req.id} className="p-3 rounded-[12px] bg-canvas border border-line flex flex-col gap-2 text-[12px]">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-navy">
+                          {req.desk} {req.patientName ? `· ${req.patientName}` : ''}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            req.status === 'Dispatched' ? 'bg-mint text-brand' : 'bg-amber/20 text-amber'
+                          }`}
+                        >
+                          {req.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {req.status === 'Pending' && (
+                          <button
+                            onClick={() => handleInterpreterStatus(req.id, 'Dispatched')}
+                            className="flex-1 h-7 rounded-full bg-accent text-canvas font-bold text-[11px]"
+                          >
+                            Dispatch Interpreter
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleInterpreterStatus(req.id, 'Resolved')}
+                          className="flex-1 h-7 rounded-full bg-ash hover:bg-line text-navy font-semibold text-[11px]"
+                        >
+                          Mark Resolved
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Today's Triage Queue */}
             <div className="bg-ash/50 rounded-[24px] border border-line p-6 flex flex-col gap-4 flex-1">
               <div className="flex items-center justify-between">
                 <h3 className="text-[17px] font-display font-bold text-navy">Desk Queue ({patients.length})</h3>
-                <span className="text-[12px] text-slate">Live</span>
               </div>
 
               <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-                {patients.map((p, idx) => (
+                {patients.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => setActivePatientIndex(idx)}
+                    onClick={() => setSelectedPatientId(p.id)}
                     className={`w-full p-3 rounded-[16px] text-left border transition-all ${
-                      idx === activePatientIndex
+                      p.id === activePatient?.id
                         ? 'bg-canvas border-accent ring-2 ring-accent/15 shadow-sm'
                         : 'bg-canvas/60 border-line hover:bg-canvas'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[14px] text-navy">{p.name}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-[14px] text-navy truncate">
+                        {p.name} <span className="text-[11px] font-mono text-slate">({p.id})</span>
+                      </span>
                       <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                          p.status === 'Waiting'
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                          p.status === 'Waiting' || p.status === 'Checking In'
                             ? 'bg-amber/15 text-amber'
                             : p.status === 'In Triage'
                             ? 'bg-sky text-navy'
@@ -1126,9 +2295,9 @@ export default function StaffPortal({ defaultRole = 'nurse' }: { defaultRole?: R
                     </div>
                     <div className="flex items-center justify-between text-[12px] text-slate mt-1">
                       <span className="flex items-center gap-1 text-[11px]">
-                        <Heartbeat size={13} /> {p.symptom}
+                        <Heartbeat size={13} className={p.urgent ? 'text-alert' : ''} /> {p.symptom || 'Checking in'} · {p.desk}
                       </span>
-                      <span className="text-[11px]">{p.time}</span>
+                      <span className="text-[11px]">{timeAgo(p.createdAt)}</span>
                     </div>
                   </button>
                 ))}
