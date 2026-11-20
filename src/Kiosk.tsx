@@ -73,23 +73,69 @@ export function TrayLabel() {
 }
 
 type CardState = 'default' | 'pressed' | 'selected'
-export function SymptomCard({ en, sw, icon: I, state, onSelect }: { en: string; sw: string; icon: Icon; state: CardState; onSelect: () => void }) {
+export function SymptomCard({
+  en,
+  sw,
+  icon: I,
+  state,
+  highlighted = false,
+  onSelect,
+  onPlayKsl,
+}: {
+  en: string
+  sw: string
+  icon: Icon
+  state: CardState
+  highlighted?: boolean
+  onSelect: () => void
+  onPlayKsl?: () => void
+}) {
   const [down, setDown] = useState(false)
   const s: CardState = state === 'selected' ? 'selected' : down ? 'pressed' : state
   const sel = s === 'selected'
   return (
     <button data-layer={`kiosk/tray/symptom-card-${s}`} aria-pressed={sel} onClick={onSelect}
       onPointerDown={() => setDown(true)} onPointerUp={() => setDown(false)} onPointerLeave={() => setDown(false)}
-      className={`relative w-[224px] h-[88px] flex items-center gap-3 pl-4 pr-3 text-left border rounded-[14px] overflow-hidden transition-colors ${sel ? 'bg-brand border-brand text-canvas' : 'bg-canvas/85 backdrop-blur-sm border-line text-navy hover:border-brand/50'}`}
+      className={`relative w-[224px] h-[88px] flex items-center gap-3 pl-4 pr-3 text-left border rounded-[14px] overflow-hidden transition-all ${
+        sel
+          ? 'bg-brand border-brand text-canvas'
+          : highlighted
+            ? 'bg-mint/70 border-2 border-accent text-navy ring-2 ring-amber/70 shadow-sm'
+            : 'bg-canvas/85 backdrop-blur-sm border-line text-navy hover:border-brand/50'
+      }`}
       style={s === 'pressed' ? { outline: `2px solid ${C.ink}`, outlineOffset: -6, borderRadius: 14 } : undefined}>
       <I size={40} weight="regular" className={`shrink-0 ${sel ? '' : 'text-brand'}`} />
       <span className="flex flex-col min-w-0 pr-8">
         <span className="text-card-label">{en}</span>
         <span className="text-card-sw">{sw}</span>
       </span>
-      <span className={`absolute top-1.5 right-1.5 h-6 px-1.5 flex items-center gap-1 rounded-full text-[11px] font-bold ${sel ? 'bg-canvas/20' : 'bg-sky text-navy'}`}>
+      <span
+        role={onPlayKsl ? 'button' : undefined}
+        tabIndex={onPlayKsl ? 0 : undefined}
+        onClick={(e) => {
+          if (onPlayKsl) {
+            e.stopPropagation()
+            onPlayKsl()
+          }
+        }}
+        onKeyDown={(e) => {
+          if (onPlayKsl && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault()
+            e.stopPropagation()
+            onPlayKsl()
+          }
+        }}
+        className={`absolute top-1.5 right-1.5 h-6 px-1.5 flex items-center gap-1 rounded-full text-[11px] font-bold ${
+          sel ? 'bg-canvas/20' : highlighted ? 'bg-amber text-navy' : 'bg-sky text-navy'
+        }`}
+      >
         <Play size={8} weight="fill" />KSL
       </span>
+      {highlighted && !sel && (
+        <span className="absolute left-3 bottom-1 text-[10px] font-extrabold uppercase tracking-wider text-accent">
+          Matched
+        </span>
+      )}
       {sel && <span aria-hidden className="absolute left-3 right-3 bottom-0 h-1.5 rounded-t-full bg-amber" />}
     </button>
   )
